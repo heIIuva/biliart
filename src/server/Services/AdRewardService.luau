@@ -16,6 +16,7 @@ local Remotes = require(Shared.Net.Remotes)
 local Shop = require(Shared.Game.Shop)
 local AnalyticsService = require(script.Parent.AnalyticsService)
 local DataService = require(script.Parent.DataService)
+local LiveConfigService = require(script.Parent.LiveConfigService)
 local MatchService = require(script.Parent.MatchService)
 
 local limiter = RateLimiter.new(0.2, 2)
@@ -24,7 +25,7 @@ local views: { [Player]: { day: number, count: number } } = {}
 -- Context checks: is there something for this ad to double right now?
 local function contextOk(player: Player, placement: string): boolean
 	local data = DataService.get(player)
-	if not data then
+	if not data or not LiveConfigService.enabled("Ads") then
 		return false
 	end
 	if placement == "MatchX2" then

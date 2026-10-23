@@ -129,6 +129,10 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" | "UnreliableRem
 	Sandbox = "RemoteEvent", -- client -> server: { action = "place", id, x, y } | { action = "rerack" | "clear" }
 	SpeedState = "UnreliableRemoteEvent", -- server -> clients, ~20 Hz: tableId, live frame buffer, scores
 	SpeedEvents = "RemoteEvent", -- server -> clients: tableId, { Event } (sounds, pots)
+	EventState = "RemoteEvent", -- server -> clients: { mini?, nextMini, weekly, holiday?, admin }
+	AdminCommand = "RemoteEvent", -- client -> server, admins only: { effect, minutes }
+	LiveConfig = "RemoteEvent", -- server -> clients: { titleNames, flags, news? }
+	SetSettings = "RemoteEvent", -- client -> server: { music?, sfx?, announcer?, quality? }
 }
 
 local FOLDER_NAME = "Remotes"

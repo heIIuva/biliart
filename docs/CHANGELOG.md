@@ -116,3 +116,22 @@
 - Speed pool: two players, own cue balls (ids 0 and 16), shoot whenever your cue ball rests; server steps
   the world every frame, live state ~20 Hz over UnreliableRemoteEvent, client interpolates 100 ms behind;
   last toucher scores, the 8 is worth 3, scratch −1.
+
+## Phase 11 — events, live config, settings
+- Events (`Config/Events`, `Game/Events` pure and tested): a mini event every 30 minutes for 5 minutes
+  (Golden hour x2 coins, Tiger night x2 spirit progress, Lantern rain coin pickups in the lobby), weekly
+  event window, holidays by date (x2 XP). `EventService` hands multipliers to matches and the dojo,
+  a banner shows the running event or a countdown to the next one.
+- Admin commands (`Config/Admins`, checked on the server): all shots are tigers, golden rain, x3 rewards.
+  Admin panel only for admins.
+- Live config (`Game/LiveConfig` pure and tested, `LiveConfigService`): DataStore JSON read on start, every
+  5 minutes and on a MessagingService ping — disabled titles, title renames, codes, mini-event order,
+  holidays, feature flags, news line. Format in `docs/LIVE_CONFIG.md`.
+- Settings: music / sound / announcer volume (SoundGroups), quality Auto/Low/High (Low and low Roblox
+  graphics levels turn camera shake off), saved on the server with validation. Music ducks under the
+  hype splash (no music track yet).
+- Localization test: every literal key in code exists in Strings with en and ru.
+  Not done: `Localization.csv` / LocalizationTable (text goes through `Util/Text`; add the table when
+  the Roblox translation portal is needed).
+- `docs/PUBLISHING.md` checklist.
+

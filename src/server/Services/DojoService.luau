@@ -18,6 +18,7 @@ local AnalyticsService = require(script.Parent.AnalyticsService)
 local DataService = require(script.Parent.DataService)
 local KingTableService = require(script.Parent.KingTableService)
 local LeaderboardService = require(script.Parent.LeaderboardService)
+local EventService = require(script.Parent.EventService)
 local ShopService = require(script.Parent.ShopService)
 
 local LOBBY_CENTER = Vector3.new(0, 0, -15)
@@ -353,6 +354,7 @@ end
 
 function DojoService.Start()
 	DojoService.addMultiplierSource(ShopService.dojoMultiplier)
+	DojoService.addMultiplierSource(EventService.dojoMultiplier)
 	DojoService.addOfflineCapSource(function(player)
 		return if ShopService.owns(player, "VIP") then Dojo.OfflineCapHoursVip else Dojo.OfflineCapHours
 	end)

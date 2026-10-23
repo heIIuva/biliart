@@ -27,12 +27,17 @@ Rojo disconnected from Studio when Play started; phases 4–6 were built and che
       uses its mock and rarity % stays hidden).
 - [ ] Hanzi and title names are placeholders: native speaker check.
 
-## Not started (stopped after phase 6 at the user's request)
-- Phase 7: PvP, queue, ranked (Elo), King of the table, spectators/big screen, quick chat, emotes,
-  friends bonus, invites, group bonus.
-- Phase 8: dojo (plots, tables, NPC students, till, offline income, upgrades, rebirth).
-- Phase 9: ShopService (game passes, products, single ProcessReceipt, gifts, server hype, starter pack),
-  shop UI, AdRewardService and the four ad placements.
-- Phase 10: chaos mode, glitch titles, trick of the week, sandbox, speed pool.
-- Phase 11: EventService, admin commands, LiveConfigService, LocalizationTable generation, sound/quality
-  settings, low-end optimisation, publishing checklist.
+## Phases 7–11 — not verified in Studio (2026-10-23)
+Built and checked offline only (Lune tests, strict types, lint).
+- [ ] Phase 7: queue and Casual/Ranked with two clients (Studio "Start" with 2 players), Elo after a match,
+      King of the table crown and big screen, quick chat above the head, invite prompt, group bonus.
+- [ ] Phase 8: dojo plot appears, students idle, till collect, offline popup after a rejoin, rebirth.
+- [ ] Phase 9: purchases in Studio test mode once ids exist; gift to another player; server hype banner;
+      rewarded ad availability (`AdService` field name marked `TODO(verify-api)`).
+- [ ] Phase 10: chaos bonuses and super shot, trick attempts and solutions in the real engine, sandbox drag,
+      speed pool feel with 100 ms interpolation and real latency.
+- [ ] Phase 11: event banner countdown, lantern pickups, admin panel (add your UserId), live config via
+      the command bar snippet, settings panel volumes.
+- [ ] Chaos "giant cue ball" and "split cue ball" bonuses.
+- [ ] Low-end: only camera shake is turned off on Low. Profile a phone before cutting more
+      (ball shadows, highlights, particle counts).

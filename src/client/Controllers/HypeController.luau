@@ -18,6 +18,7 @@ local TableSpace = require(Shared.World.TableSpace)
 local Text = require(Shared.Util.Text)
 local Titles = require(Shared.Config.Titles)
 local Sfx = require(script.Parent.Parent.Util.Sfx)
+local SettingsController = require(script.Parent.SettingsController)
 local ShopController = require(script.Parent.ShopController)
 local TableViewController = require(script.Parent.TableViewController)
 
@@ -135,10 +136,11 @@ local function showSplash(hype: Remotes.HypePayload)
 	TweenService:Create(splashScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 		Scale = comboScale,
 	}):Play()
-	shakeStrength = title.cameraShake * comboScale
+	shakeStrength = if SettingsController.lowQuality() then 0 else title.cameraShake * comboScale
 	shakeUntil = os.clock() + 0.5
 	Sfx.play(title.sound, math.min(1, 0.7 * comboScale))
-	Sfx.play(title.announcer, 1)
+	Sfx.play(title.announcer, 1, "Announcer")
+	Sfx.duck(Hype.SplashSeconds)
 	task.delay(Hype.SplashSeconds, function()
 		splash.Enabled = false
 	end)
@@ -149,6 +151,8 @@ local function showBanner(message: Remotes.Announcement)
 	local name
 	if message.titleId == "SERVER_HYPE" then
 		name = Text.get("TITLE_SERVER_HYPE")
+	elseif string.sub(message.titleId, 1, 6) == "ADMIN_" then
+		name = Text.get(message.titleId)
 	elseif title then
 		name = `{title.hanzi} {Text.get(title.nameKey)}`
 	else

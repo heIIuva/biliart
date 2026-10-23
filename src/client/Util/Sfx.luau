@@ -13,11 +13,45 @@ local Game = require(Shared:WaitForChild("Config"):WaitForChild("Game"))
 local MIN_INTERVAL = 0.03 -- the same sound at most once per 30 ms, or a break turns into noise
 
 local templates: { [string]: Sound } = {}
+local groups: { [string]: SoundGroup } = {}
 local lastPlayed: { [string]: number } = {}
 
 local Sfx = {}
 
-function Sfx.play(key: string, volume: number)
+-- "Sfx" | "Announcer" | "Music": volumes come from the player's settings.
+function Sfx.group(name: string): SoundGroup
+	local existing = groups[name]
+	if existing then
+		return existing
+	end
+	local group = Instance.new("SoundGroup")
+	group.Name = name
+	group.Parent = SoundService
+	groups[name] = group
+	return group
+end
+
+local musicVolume, duckedUntil = 1, 0
+
+local function applyMusic()
+	Sfx.group("Music").Volume = if os.clock() < duckedUntil then musicVolume * 0.25 else musicVolume
+end
+
+function Sfx.setVolumes(music: number, sfx: number, announcer: number)
+	musicVolume = music
+	applyMusic()
+	Sfx.group("Sfx").Volume = sfx
+	Sfx.group("Announcer").Volume = announcer
+end
+
+-- Music drops to a quarter for `seconds` (the hype splash), then comes back.
+function Sfx.duck(seconds: number)
+	duckedUntil = os.clock() + seconds
+	applyMusic()
+	task.delay(seconds, applyMusic)
+end
+
+function Sfx.play(key: string, volume: number, groupName: string?)
 	local asset = Assets.Sounds[key]
 	if not asset or asset.id == 0 then
 		if Game.LogSoundStubs then
@@ -42,6 +76,7 @@ function Sfx.play(key: string, volume: number)
 	end
 	local sound = template:Clone()
 	sound.Volume = math.min(asset.gain * volume, 10)
+	sound.SoundGroup = Sfx.group(groupName or "Sfx")
 	sound.Parent = SoundService
 	sound:Play()
 	Debris:AddItem(sound, asset.length + 0.5)

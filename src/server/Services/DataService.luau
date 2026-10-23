@@ -11,6 +11,8 @@ local Shared = ReplicatedStorage.Shared
 local Progression = require(Shared.Game.Progression)
 local Remotes = require(Shared.Net.Remotes)
 local Signal = require(Shared.Util.Signal)
+local RateLimiter = require(Shared.Util.RateLimiter)
+local Validate = require(Shared.Util.Validate)
 local Strings = require(Shared.Config.Strings)
 local ProfileStore = require(script.Parent.Parent.Packages.ProfileStore)
 local AnalyticsService = require(script.Parent.AnalyticsService)
@@ -175,6 +177,17 @@ function DataService.Start()
 		local data = DataService.get(player)
 		if data and not data.tutorialDone then
 			data.tutorialDone = true
+			DataService.changed(player)
+		end
+	end)
+	local settingsLimiter = RateLimiter.new(4, 2)
+	Remotes.Event("SetSettings").OnServerEvent:Connect(function(player, payload)
+		local data = DataService.get(player)
+		local settings = if data and settingsLimiter:Allow(player)
+			then Validate.settings(data.settings, payload)
+			else nil
+		if data and settings then
+			data.settings = settings
 			DataService.changed(player)
 		end
 	end)

@@ -11,6 +11,15 @@ local function shot(overrides: { [string]: any }): { [string]: any }
 end
 
 return {
+	["settings: clamps volumes, rejects junk"] = function()
+		local current = { music = 0.6, sfx = 1, announcer = 1, quality = "Auto" }
+		local result = Validate.settings(current, { music = 5, quality = "Low" })
+		assert(result and result.music == 1 and result.quality == "Low" and result.sfx == 1, "valid settings")
+		assert(current.music == 0.6, "input must not change")
+		assert(Validate.settings(current, { quality = "Ultra" }) == nil, "bad quality")
+		assert(Validate.settings(current, { sfx = 0 / 0 }) == nil, "NaN volume")
+		assert(Validate.settings(current, "x") == nil, "not a table")
+	end,
 	["accepts a valid shot and returns a clean copy"] = function()
 		local input = shot({ extra = "ignored" })
 		local result = Validate.shotParams(input)

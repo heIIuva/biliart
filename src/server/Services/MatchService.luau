@@ -39,8 +39,10 @@ local AnalyticsService = require(script.Parent.AnalyticsService)
 local BotService = require(script.Parent.BotService)
 local CueService = require(script.Parent.CueService)
 local DataService = require(script.Parent.DataService)
+local EventService = require(script.Parent.EventService)
 local HypeService = require(script.Parent.HypeService)
 local LeaderboardService = require(script.Parent.LeaderboardService)
+local LiveConfigService = require(script.Parent.LiveConfigService)
 local QuestService = require(script.Parent.QuestService)
 local ShopService = require(script.Parent.ShopService)
 local SocialService = require(script.Parent.SocialService)
@@ -285,11 +287,16 @@ local function award(match: Match, winner: number, leaver: number?)
 				coins = if won then rewards.win else rewards.loss
 				xp = if won then Economy.Xp.Win else Economy.Xp.Loss
 			end
-			coins = math.floor(coins * SocialService.rewardMultiplier(player) * ShopService.coinMultiplier(player))
+			coins = math.floor(
+				coins
+					* SocialService.rewardMultiplier(player)
+					* ShopService.coinMultiplier(player)
+					* EventService.coinMultiplier()
+			)
 			lastMatchCoins[player] = coins
 			DataService.addCurrency(player, "coins", coins, "Gameplay", if won then "MatchWin" else "MatchPlayed")
 			DataService.notify(player, "NOTIFY_COINS", { amount = coins })
-			DataService.addXp(player, xp)
+			DataService.addXp(player, xp * EventService.xpMultiplier())
 			AnalyticsService.funnel(player, AnalyticsService.Funnel.MatchFinished, "MatchFinished")
 		end
 		DataService.changed(player)
@@ -343,14 +350,16 @@ local function progressShot(
 		if ranked then
 			data.stats.rankedTitles[title.id] = (data.stats.rankedTitles[title.id] or 0) + 1
 		end
-		SpiritService.onTitle(player, title.id)
+		for _ = 1, EventService.spiritMultiplier() do
+			SpiritService.onTitle(player, title.id)
+		end
 		QuestService.event(player, "title", title.id)
 		if title.kind == "Title" then
 			xp += Economy.Xp.Title
 			LeaderboardService.submit("ShotOfDay", player, title.priority, true)
 		end
 	end
-	DataService.addXp(player, xp)
+	DataService.addXp(player, xp * EventService.xpMultiplier())
 	DataService.changed(player)
 end
 
@@ -567,8 +576,8 @@ function playShot(
 		visitOwnPots = match.visitOwnPots,
 		turnStreak = match.turnStreak + 1,
 	})
-	local title = ShotClassifier.classify(report)
-	if useSuper then
+	local title = ShotClassifier.classify(report, LiveConfigService.get().disabledTitles)
+	if useSuper or (EventService.allTiger() and report.pottedOwn > 0) then
 		title = ShotClassifier.byId("TIGER") -- the Tiger super shot always gets its splash
 	end
 	if match.chaos then
@@ -845,7 +854,7 @@ local function onStart(player: Player, payload: unknown)
 		return
 	end
 	leaveQueue(player)
-	if payload == "Cancel" then
+	if payload == "Cancel" or (type(payload) == "string" and not LiveConfigService.enabled(payload)) then
 		return
 	end
 	if SpeedPoolService.isPlaying(entry) then

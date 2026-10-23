@@ -6,11 +6,16 @@ local LocalizationService = game:GetService("LocalizationService")
 local Strings = require("../Config/Strings")
 
 local russian = string.sub(LocalizationService.RobloxLocaleId, 1, 2) == "ru"
+local overrides: { [string]: { en: string, ru: string } } = {} -- from live config (title renames)
 
 local Text = {}
 
+function Text.override(key: string, entry: { en: string, ru: string }?)
+	overrides[key] = entry :: any
+end
+
 function Text.get(key: string): string
-	local entry = Strings[key]
+	local entry = overrides[key] or Strings[key]
 	if not entry then
 		warn(`[Text] missing key {key}`)
 		return key
