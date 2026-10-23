@@ -10,10 +10,12 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared.Net.Remotes)
+local Speed = require(Shared.Config.Speed)
 local Tables = require(Shared.Config.Tables)
 local Text = require(Shared.Util.Text)
 local MatchHud = require(script.Parent.Parent.UI.MatchHud)
 local AdController = require(script.Parent.AdController)
+local SpeedController = require(script.Parent.SpeedController)
 local TableViewController = require(script.Parent.TableViewController)
 
 local GROUP_KEYS = { Solids = "GROUP_SOLIDS", Stripes = "GROUP_STRIPES" }
@@ -46,6 +48,9 @@ end
 
 function MatchController.canShoot(): boolean
 	local snapshot = shown
+	if snapshot and snapshot.mode == "Speed" then
+		return snapshot.phase == "Playing" and SpeedController.myCueResting(snapshot.tableId)
+	end
 	return snapshot ~= nil
 		and snapshot.phase == "Playing"
 		and myIndex(snapshot) == snapshot.current
@@ -176,7 +181,13 @@ local function render()
 
 	local mine = snapshot.current == me
 	local hint: string? = nil
-	if not mine then
+	if snapshot.mode == "Speed" then
+		SpeedController.setMyCue(if me == 2 then Speed.SecondCueId else 0)
+		local left = math.max(0, math.floor(snapshot.turnEndsAt - Workspace:GetServerTimeNow()))
+		hud.setHint(nil)
+		hud.setHintText(Text.format("SPEED_HINT", { time = string.format("%d:%02d", left // 60, left % 60) }))
+		return
+	elseif not mine then
 		local opponent = snapshot.players[snapshot.current]
 		hint = if opponent and opponent.isBot then "MATCH_BOT_THINKING" else "MATCH_OPPONENT_TURN"
 	elseif snapshot.mode == "Sandbox" then

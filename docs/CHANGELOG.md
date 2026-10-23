@@ -103,3 +103,16 @@
   name the reward — x2 match reward, x2 offline income, x2 dojo income for 10 minutes.
 - Shop UI with gift target selection. APIs checked against the Roblox type definitions; deprecated
   `Humanoid:PlayEmote` replaced by `PlayEmoteAsync`.
+
+## Phase 10 — chaos and content for creators
+- Chaos mode: golden balls hand out one-shot bonuses (narrow pockets for the opponent, fog, earthquake,
+  moon jump), Tiger meter and super shot (faster cue, guaranteed TIGER splash), QUANTUM glitch title.
+  Not done: "giant cue ball" and "split cue ball" (need per-ball radius / several cue balls in rules).
+- Trick of the week: weekly absurd layouts with solutions found by `tools/find_tricks.luau` and tested,
+  daily attempts, a rewarded-ad retry, fewest-attempts leaderboard.
+- Sandbox: no rules, drag any ball, re-rack/clear, hide UI, free orbit camera; titles without rewards.
+- Physics refactor: `makeWorld` with `strike`/`stepOnce`; `simulateShot` now wraps it (break trajectory
+  byte-identical before/after), `PoolPhysics.newWorld` for continuous play (tested equal to simulateShot).
+- Speed pool: two players, own cue balls (ids 0 and 16), shoot whenever your cue ball rests; server steps
+  the world every frame, live state ~20 Hz over UnreliableRemoteEvent, client interpolates 100 ms behind;
+  last toucher scores, the 8 is worth 3, scratch −1.

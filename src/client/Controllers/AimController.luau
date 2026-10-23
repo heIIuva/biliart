@@ -22,6 +22,7 @@ local Remotes = require(Shared.Net.Remotes)
 local TableSpace = require(Shared.World.TableSpace)
 local TableHud = require(script.Parent.Parent.UI.TableHud)
 local MatchController = require(script.Parent.MatchController)
+local SpeedController = require(script.Parent.SpeedController)
 local TableViewController = require(script.Parent.TableViewController)
 
 type View = TableViewController.View
@@ -52,8 +53,13 @@ local cueStick: Part
 local pocketMarkers: { Part } = {}
 
 local function cueBall(view: View): PoolPhysics.BallState?
+	local id = SpeedController.myCueId()
+	local match = MatchController.current()
+	if not match or match.mode ~= "Speed" then
+		id = 0
+	end
 	for _, b in view.balls do
-		if b.id == 0 and b.status == "Stationary" then
+		if b.id == id and b.status == "Stationary" then
 			return b
 		end
 	end
@@ -114,7 +120,7 @@ local function drawAim(view: View, cue: PoolPhysics.BallState)
 	local R = view.geometry.ballRadius
 	local scale = aimScale()
 	local surface = view.surface
-	local prediction = AimPredictor.predict(view.geometry, view.balls, aim.angle)
+	local prediction = AimPredictor.predict(view.geometry, view.balls, aim.angle, cue.id)
 	local from = TableSpace.toWorld(surface, cue.x, cue.y, R)
 	local contact = TableSpace.toWorld(surface, prediction.ghostX, prediction.ghostY, R)
 
@@ -213,7 +219,9 @@ local function shoot(power: number)
 		superShot = MatchController.superShot(),
 	})
 	MatchController.shotSent()
-	waitingSince = os.clock()
+	if match.mode ~= "Speed" then
+		waitingSince = os.clock() -- speed pool: no turns, the cue ball's motion is the lock
+	end
 	aim.spinX, aim.spinY, aim.elevation = 0, 0, 0
 	hud.setSpin(0, 0)
 	hud.setElevation(0)

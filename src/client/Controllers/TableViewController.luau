@@ -103,7 +103,8 @@ end
 
 -- A ball with a visible mark (stripe band or spot) so rolling and spin read on screen.
 local function makeBall(id: number, diameter: number): BasePart
-	local stripe = id >= 9
+	local secondCue = id == 16 -- speed pool: player 2's cue ball
+	local stripe = id >= 9 and not secondCue
 	local ball = Instance.new("Part")
 	ball.Name = `Ball{id}`
 	ball.Shape = Enum.PartType.Ball
@@ -113,7 +114,7 @@ local function makeBall(id: number, diameter: number): BasePart
 	ball.CanQuery = false
 	ball.CanTouch = false
 	ball.Material = Enum.Material.SmoothPlastic
-	ball.Color = if stripe then WHITE else BALL_COLORS[id]
+	ball.Color = if stripe or secondCue then WHITE else BALL_COLORS[id]
 	if stripe then
 		local band = Instance.new("Part")
 		band.Shape = Enum.PartType.Cylinder
@@ -124,7 +125,7 @@ local function makeBall(id: number, diameter: number): BasePart
 		local spot = Instance.new("Part")
 		spot.Shape = Enum.PartType.Ball
 		spot.Size = Vector3.one * diameter * 0.3
-		spot.Color = if id == 0 then CUE_SPOT else WHITE
+		spot.Color = if id == 0 then CUE_SPOT elseif secondCue then Color3.fromRGB(30, 80, 220) else WHITE
 		attach(ball, spot, CFrame.new(0, diameter * 0.4, 0))
 	end
 	return ball
@@ -478,6 +479,19 @@ function TableViewController.toggleFreeCamera()
 	camera.FieldOfView = 50
 	camera.CameraSubject = anchor
 	camera.CameraType = Enum.CameraType.Custom
+end
+
+-- Speed pool: sounds and pocket effects for live events.
+function TableViewController.playEvents(view: View, events: { PoolPhysics.Event })
+	for _, event in events do
+		playEvent(view, event)
+	end
+end
+
+-- Speed pool: makes sure every ball in the list has a part (e.g. the second cue ball).
+function TableViewController.ensureBalls(view: View, balls: { PoolPhysics.BallState })
+	view.balls = balls
+	applyBalls(view)
 end
 
 function TableViewController.view(tableId: string): View?

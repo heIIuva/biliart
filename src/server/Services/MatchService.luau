@@ -44,6 +44,7 @@ local LeaderboardService = require(script.Parent.LeaderboardService)
 local QuestService = require(script.Parent.QuestService)
 local ShopService = require(script.Parent.ShopService)
 local SocialService = require(script.Parent.SocialService)
+local SpeedPoolService = require(script.Parent.SpeedPoolService)
 local SpiritService = require(script.Parent.SpiritService)
 local TableService = require(script.Parent.TableService)
 
@@ -60,7 +61,7 @@ type Seat = {
 	cue: Cues.Cue, -- stats used this match (base in ranked and the tutorial)
 }
 
-export type Mode = "Bot" | "Casual" | "Ranked" | "King" | "Chaos" | "Trick" | "Sandbox"
+export type Mode = "Bot" | "Casual" | "Ranked" | "King" | "Chaos" | "Trick" | "Sandbox" | "Speed"
 
 -- Chaos mode state (golden balls, one-shot bonuses, Tiger meter) by seat index.
 type ChaosState = {
@@ -109,6 +110,10 @@ local shotLimiter = RateLimiter.new(1, 2)
 local startLimiter = RateLimiter.new(0.5, 2)
 
 local function snapshot(entry: TableService.Entry): Remotes.MatchSnapshot
+	local speed = SpeedPoolService.snapshot(entry)
+	if speed then
+		return speed
+	end
 	local match = matches[entry.id]
 	if not match then
 		local host = entry.occupants[1]
@@ -650,6 +655,9 @@ function playShot(
 end
 
 local function onShot(player: Player, payload: unknown)
+	if SpeedPoolService.shoot(player, payload) then
+		return
+	end
 	if not shotLimiter:Allow(player) then
 		return
 	end
@@ -809,7 +817,11 @@ local function enqueue(player: Player, entry: TableService.Entry, mode: Mode)
 			queued[other] = nil
 			local host = waiting.entry
 			if TableService.seatAt(player, host, 2) then
-				MatchService.startPvp(host, other, player, mode)
+				if mode == "Speed" then
+					SpeedPoolService.start(host, other, player)
+				else
+					MatchService.startPvp(host, other, player, mode)
+				end
 				return
 			end
 		end
@@ -836,13 +848,16 @@ local function onStart(player: Player, payload: unknown)
 	if payload == "Cancel" then
 		return
 	end
+	if SpeedPoolService.isPlaying(entry) then
+		return
+	end
 	if entry.occupants[2] and not MatchService.isPlaying(entry) then
 		TableService.unseat(entry.occupants[2]) -- the previous opponent's seat is freed for a new match
 	end
 	local level = Validate.botLevel(payload)
 	if level then
 		startMatch(entry, { humanSeat(player, false), botSeat(level) }, "Bot", false)
-	elseif payload == "Casual" or payload == "Ranked" then
+	elseif payload == "Casual" or payload == "Ranked" or payload == "Speed" then
 		enqueue(player, entry, payload)
 	elseif payload == "Chaos" then
 		startMatch(entry, { humanSeat(player, false), botSeat(Chaos.BotLevel) }, "Chaos", false)

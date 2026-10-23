@@ -362,4 +362,11 @@ return {
 		en = "Drag any ball. No rules.",
 		ru = "Перетаскивайте любые шары. Без правил.",
 	},
+
+	MATCH_SPEED = { en = "Speed pool", ru = "Скоростной бильярд" },
+	SPEED_OVER = { en = "Time!", ru = "Время!" },
+	SPEED_HINT = {
+		en = "Shoot any time your cue ball rests! {time}",
+		ru = "Бейте, как только ваш биток остановился! {time}",
+	},
 } :: { [string]: { en: string, ru: string } }

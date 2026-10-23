@@ -143,6 +143,7 @@ function MatchHud.new(callbacks: Callbacks): Hud
 		{ name = "ChaosButton", key = "MATCH_CHAOS", payload = "Chaos", color = Color3.fromRGB(110, 20, 110) },
 		{ name = "TrickButton", key = "MATCH_TRICK", payload = "Trick", color = Color3.fromRGB(20, 90, 110) },
 		{ name = "SandboxButton", key = "MATCH_SANDBOX", payload = "Sandbox", color = Color3.fromRGB(20, 90, 110) },
+		{ name = "SpeedButton", key = "MATCH_SPEED", payload = "Speed", color = Color3.fromRGB(120, 80, 20) },
 		{ name = "PickerLeaveButton", key = "HUD_LEAVE", payload = nil, color = Color3.fromRGB(60, 60, 60) },
 	}
 	for i, entry in entries do

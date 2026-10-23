@@ -47,11 +47,18 @@ local function circleHit(
 	return -half - math.sqrt(disc)
 end
 
-function AimPredictor.predict(geometry: TableGeometry.Geometry, balls: { PoolPhysics.BallState }, angle: number): Aim
+-- cueId: the shooter's cue ball (speed pool gives player 2 its own); defaults to 0.
+function AimPredictor.predict(
+	geometry: TableGeometry.Geometry,
+	balls: { PoolPhysics.BallState },
+	angle: number,
+	cueId: number?
+): Aim
 	local R = geometry.ballRadius
 	local cue: PoolPhysics.BallState? = nil
+	local own = cueId or 0
 	for _, b in balls do
-		if b.id == 0 then
+		if b.id == own then
 			cue = b
 		end
 	end
@@ -65,7 +72,7 @@ function AimPredictor.predict(geometry: TableGeometry.Geometry, balls: { PoolPhy
 	local normalX, normalY = 0, 0
 
 	for _, b in balls do
-		if b.id ~= 0 and b.status == "Stationary" then
+		if b.id ~= own and b.status == "Stationary" then
 			local s = circleHit(px, py, dx, dy, b.x, b.y, 2 * R)
 			if s and s < best then
 				best, kind, target = s, "Ball", b

@@ -145,11 +145,9 @@ local PoolPhysics = {}
 PoolPhysics.EventKind = EventKind
 PoolPhysics.FRAME_STRIDE = FRAME_STRIDE
 
-function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: SimOptions?): SimResult
-	local options: SimOptions = opts or {}
-	local P = options.params or Physics
-	local record = options.record ~= false
-	local maxTime = options.maxSeconds or P.MaxShotSeconds
+-- The simulation state and its step function. simulateShot runs one shot on it; newWorld exposes
+-- it for continuous play (speed pool), where several cue balls can be struck at any time.
+local function makeWorld(state: TableState, P: Params)
 	local geometry = state.geometry
 
 	local R = geometry.ballRadius
@@ -166,8 +164,6 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 	local ballE, cushionE = P.BallRestitution, P.CushionRestitution
 
 	local dt = 1 / P.SimHz
-	local stepsPerFrame = P.SimHz // P.RecordHz
-	assert(stepsPerFrame * P.RecordHz == P.SimHz, "RecordHz must divide SimHz")
 
 	local balls: { Ball } = {}
 	local cue: Ball? = nil
@@ -202,7 +198,6 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 			cue = ball
 		end
 	end
-	assert(cue and cue.status == "Stationary", "cue ball must be on the table")
 	local ballCount = #balls
 
 	local events: { Event } = {}
@@ -220,7 +215,7 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 	end
 
 	-- Strike: impulse along the (elevated) cue through the tip contact point.
-	do
+	local function strike(ball: Ball, shot: ShotParams)
 		local angle = shot.angle
 		local power = math.clamp(shot.power, 0, 1)
 		local elevation = math.clamp(shot.elevation, 0, P.MaxElevation)
@@ -234,19 +229,24 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 		local lx, ly = -fy, fx -- left of the shot direction
 		local ce, se = math.cos(elevation), math.sin(elevation)
 		local k = 2.5 * speed / R
-		cue.vx, cue.vy = speed * ce * fx, speed * ce * fy
-		cue.wx = k * (spinX * se * fx + spinY * lx)
-		cue.wy = k * (spinX * se * fy + spinY * ly)
-		cue.wz = k * spinX * ce
-		cue.status = "Sliding"
-		emit(EventKind.CueStrike, 0, 0, speed, 0)
-		aimX, aimY, aimDX, aimDY = cue.x, cue.y, fx, fy
+		ball.vx, ball.vy = speed * ce * fx, speed * ce * fy
+		ball.wx = k * (spinX * se * fx + spinY * lx)
+		ball.wy = k * (spinX * se * fy + spinY * ly)
+		ball.wz = k * spinX * ce
+		ball.status = "Sliding"
+		emit(EventKind.CueStrike, ball.id, 0, speed, t)
+		if ball.id == 0 then
+			aimX, aimY, aimDX, aimDY = ball.x, ball.y, fx, fy
+			cueTouched = false
+		end
 		local vz = P.JumpRestitution * speed * se
 		if vz >= P.MinJumpSpeed then
-			cue.vz = vz
-			cue.status = "Airborne"
-			emit(EventKind.Airborne, 0, 0, vz, 0)
-			takeoffX, takeoffY = cue.x, cue.y
+			ball.vz = vz
+			ball.status = "Airborne"
+			emit(EventKind.Airborne, ball.id, 0, vz, t)
+			if ball.id == 0 then
+				takeoffX, takeoffY = ball.x, ball.y
+			end
 		end
 	end
 
@@ -396,23 +396,18 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 		table.insert(frames, { t = at, data = data })
 	end
 
-	if record then
-		recordFrame(0)
-	end
-
 	local step = 0
-	while t < maxTime do
-		local anyMoving = false
+	local function anyMoving(): boolean
 		for _, b in balls do
 			if isMoving(b.status) then
-				anyMoving = true
-				break
+				return true
 			end
 		end
-		if not anyMoving then
-			break
-		end
+		return false
+	end
 
+	-- One fixed step of 1/SimHz with exact contact handling inside it.
+	local function stepOnce()
 		for _, b in balls do
 			prepare(b, dt)
 		end
@@ -423,8 +418,8 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 			local remain = dt - elapsed
 			local bestT = remain
 			local hit = HIT_NONE
-			local hitA: Ball = cue
-			local hitB: Ball = cue
+			local hitA: Ball = balls[1] -- placeholders, set together with `hit`
+			local hitB: Ball = balls[1]
 			local hitSegment = segments[1]
 			local hitPocket = pockets[1]
 			local hitEndX, hitEndY, hitEndPocket = 0, 0, 0
@@ -655,7 +650,7 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 		end
 
 		t += dt
-		if not cueTouched and isOnTable(cue.status) then
+		if cue and not cueTouched and isOnTable(cue.status) then
 			cueCurve = math.max(cueCurve, abs((cue.x - aimX) * aimDY - (cue.y - aimY) * aimDX))
 		end
 		step += 1
@@ -675,59 +670,204 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 				end
 			end
 		end
-
-		if record and step % stepsPerFrame == 0 then
-			recordFrame(step // stepsPerFrame / P.RecordHz)
-		end
 	end
 
 	-- Residual spin in place changes nothing visible: settle it.
-	for _, b in balls do
-		if isOnTable(b.status) and b.status ~= "Stationary" then
-			b.status = "Stationary"
-			b.vx, b.vy, b.vz, b.wx, b.wy, b.wz = 0, 0, 0, 0, 0, 0
-			b.z = R
-			b.dirty = true
-		end
-	end
-	if record then
-		local hasDirty = false
+	local function settle()
 		for _, b in balls do
-			hasDirty = hasDirty or b.dirty
-		end
-		if hasDirty then
-			recordFrame(#frames / P.RecordHz)
+			if isOnTable(b.status) and b.status ~= "Stationary" then
+				b.status = "Stationary"
+				b.vx, b.vy, b.vz, b.wx, b.wy, b.wz = 0, 0, 0, 0, 0, 0
+				b.z = R
+				b.dirty = true
+			end
 		end
 	end
 
-	local finalState: { BallState } = {}
-	for _, b in balls do
-		table.insert(finalState, {
-			id = b.id,
-			x = b.x,
-			y = b.y,
-			status = b.status,
-			qx = b.qx,
-			qy = b.qy,
-			qz = b.qz,
-			qw = b.qw,
-		})
+	local function hasDirty(): boolean
+		for _, b in balls do
+			if b.dirty then
+				return true
+			end
+		end
+		return false
 	end
 
-	local travel: { [number]: number } = {}
-	for _, b in balls do
-		travel[b.id] = b.travel
+	local function result(): SimResult
+		local finalState: { BallState } = {}
+		for _, b in balls do
+			table.insert(finalState, {
+				id = b.id,
+				x = b.x,
+				y = b.y,
+				status = b.status,
+				qx = b.qx,
+				qy = b.qy,
+				qz = b.qz,
+				qw = b.qw,
+			})
+		end
+
+		local travel: { [number]: number } = {}
+		for _, b in balls do
+			travel[b.id] = b.travel
+		end
+
+		return {
+			finalState = finalState,
+			events = events,
+			frames = frames,
+			recordHz = P.RecordHz,
+			duration = t,
+			travel = travel,
+			cueCurve = cueCurve,
+			cueJumps = cueJumps,
+		}
+	end
+
+	local function ball(id: number): Ball?
+		for _, b in balls do
+			if b.id == id then
+				return b
+			end
+		end
+		return nil
 	end
 
 	return {
-		finalState = finalState,
+		balls = balls,
 		events = events,
 		frames = frames,
-		recordHz = P.RecordHz,
-		duration = t,
-		travel = travel,
-		cueCurve = cueCurve,
-		cueJumps = cueJumps,
+		strike = strike,
+		stepOnce = stepOnce,
+		anyMoving = anyMoving,
+		settle = settle,
+		hasDirty = hasDirty,
+		recordFrame = recordFrame,
+		result = result,
+		ball = ball,
+		time = function(): number
+			return t
+		end,
+		steps = function(): number
+			return step
+		end,
+	}
+end
+
+function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: SimOptions?): SimResult
+	local options: SimOptions = opts or {}
+	local P = options.params or Physics
+	local record = options.record ~= false
+	local maxTime = options.maxSeconds or P.MaxShotSeconds
+	local stepsPerFrame = P.SimHz // P.RecordHz
+	assert(stepsPerFrame * P.RecordHz == P.SimHz, "RecordHz must divide SimHz")
+
+	local world = makeWorld(state, P)
+	local cue = world.ball(0)
+	assert(cue and cue.status == "Stationary", "cue ball must be on the table")
+	world.strike(cue, shot)
+	if record then
+		world.recordFrame(0)
+	end
+	while world.time() < maxTime and world.anyMoving() do
+		world.stepOnce()
+		local step = world.steps()
+		if record and step % stepsPerFrame == 0 then
+			world.recordFrame(step // stepsPerFrame / P.RecordHz)
+		end
+	end
+	world.settle()
+	if record and world.hasDirty() then
+		world.recordFrame(#world.frames / P.RecordHz)
+	end
+	return world.result()
+end
+
+-- A live table for continuous play (speed pool). Balls are struck at any time; advance() runs
+-- fixed physics steps for the elapsed time. Positions use the same model as simulateShot.
+export type WorldBall = {
+	id: number,
+	x: number,
+	y: number,
+	z: number,
+	status: Status,
+	moving: boolean,
+	qx: number,
+	qy: number,
+	qz: number,
+	qw: number,
+}
+
+export type World = {
+	strike: (id: number, shot: ShotParams) -> boolean, -- false unless the ball rests on the table
+	advance: (seconds: number) -> (),
+	drainEvents: () -> { Event },
+	place: (id: number, x: number, y: number) -> (), -- put a ball back on the table at rest
+	balls: () -> { WorldBall },
+	time: () -> number,
+}
+
+function PoolPhysics.newWorld(state: TableState, params: Params?): World
+	local P = params or Physics
+	local world = makeWorld(state, P)
+	local stepSeconds = 1 / P.SimHz
+	local accumulator = 0
+	local drained = 0
+
+	local function balls(): { WorldBall }
+		local list = {}
+		for _, b in world.balls do
+			table.insert(list, {
+				id = b.id,
+				x = b.x,
+				y = b.y,
+				z = b.z,
+				status = b.status,
+				moving = isMoving(b.status),
+				qx = b.qx,
+				qy = b.qy,
+				qz = b.qz,
+				qw = b.qw,
+			})
+		end
+		return list
+	end
+
+	return {
+		strike = function(id: number, shot: ShotParams): boolean
+			local b = world.ball(id)
+			if not b or b.status ~= "Stationary" and b.status ~= "Spinning" then
+				return false
+			end
+			world.strike(b, shot)
+			return true
+		end,
+		advance = function(seconds: number)
+			accumulator = math.min(accumulator + seconds, 0.25) -- never spiral after a hitch
+			while accumulator >= stepSeconds do
+				accumulator -= stepSeconds
+				world.stepOnce()
+			end
+		end,
+		drainEvents = function(): { Event }
+			local fresh = {}
+			for i = drained + 1, #world.events do
+				table.insert(fresh, world.events[i])
+			end
+			drained = #world.events
+			return fresh
+		end,
+		place = function(id: number, x: number, y: number)
+			local b = world.ball(id)
+			if b then
+				b.x, b.y, b.z = x, y, state.geometry.ballRadius
+				b.vx, b.vy, b.vz, b.wx, b.wy, b.wz = 0, 0, 0, 0, 0, 0
+				b.status = "Stationary"
+			end
+		end,
+		balls = balls,
+		time = world.time,
 	}
 end
 

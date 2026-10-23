@@ -93,7 +93,7 @@ export type LeaderboardRow = { rank: number, name: string, score: number }
 
 export type QuickChatMessage = { userId: number, id: string }
 
-local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
+local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" | "UnreliableRemoteEvent" } = {
 	Shot = "RemoteEvent", -- client -> server: ShotParams (+ calledPocket, cueBallPos); shooter's turn only
 	ShotResult = "RemoteEvent", -- server -> clients: ShotResultPayload
 	TableState = "RemoteEvent", -- server -> clients: TableSnapshot (on join, on a new rack)
@@ -127,6 +127,8 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	RequestAd = "RemoteEvent", -- client -> server: placement name (Config.Ads)
 	AdResult = "RemoteEvent", -- server -> client: { placement, shown: boolean }
 	Sandbox = "RemoteEvent", -- client -> server: { action = "place", id, x, y } | { action = "rerack" | "clear" }
+	SpeedState = "UnreliableRemoteEvent", -- server -> clients, ~20 Hz: tableId, live frame buffer, scores
+	SpeedEvents = "RemoteEvent", -- server -> clients: tableId, { Event } (sounds, pots)
 }
 
 local FOLDER_NAME = "Remotes"
@@ -152,6 +154,10 @@ end
 
 function Remotes.Event(name: string): RemoteEvent
 	return get(name) :: RemoteEvent
+end
+
+function Remotes.Unreliable(name: string): UnreliableRemoteEvent
+	return get(name) :: UnreliableRemoteEvent
 end
 
 function Remotes.Function(name: string): RemoteFunction
