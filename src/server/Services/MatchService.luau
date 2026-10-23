@@ -1,7 +1,7 @@
 --!strict
--- Matches against the bot: turns, turn timer, ball in hand, called pocket for the 8, end of the
--- match. The server simulates every shot and applies PoolRules; clients only send intents.
--- Leaving after the first shot loses the match.
+-- Matches: against the bot, casual and ranked PvP (server queue), King of the table.
+-- Turns, turn timer, ball in hand, called pocket for the 8, end of the match. The server simulates
+-- every shot and applies PoolRules; clients only send intents. Leaving after the first shot loses.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,6 +20,9 @@ local Cues = require(Shared.Config.Cues)
 local Economy = require(Shared.Config.Economy)
 local Progression = require(Shared.Game.Progression)
 local Rules = require(Shared.Config.Rules)
+local Signal = require(Shared.Util.Signal)
+local Social = require(Shared.Config.Social)
+local Tables = require(Shared.Config.Tables)
 local ShotClassifier = require(Shared.Pool.ShotClassifier)
 local ShotReport = require(Shared.Pool.ShotReport)
 local Titles = require(Shared.Config.Titles)
@@ -34,6 +37,7 @@ local DataService = require(script.Parent.DataService)
 local HypeService = require(script.Parent.HypeService)
 local LeaderboardService = require(script.Parent.LeaderboardService)
 local QuestService = require(script.Parent.QuestService)
+local SocialService = require(script.Parent.SocialService)
 local SpiritService = require(script.Parent.SpiritService)
 local TableService = require(script.Parent.TableService)
 
@@ -50,8 +54,11 @@ type Seat = {
 	cue: Cues.Cue, -- stats used this match (base in ranked and the tutorial)
 }
 
+export type Mode = "Bot" | "Casual" | "Ranked" | "King"
+
 type Match = {
 	entry: TableService.Entry,
+	mode: Mode,
 	seats: { Seat },
 	rules: PoolRules.RulesState,
 	variant: Rules.Variant,
@@ -72,15 +79,19 @@ type Match = {
 }
 
 local matches: { [string]: Match } = {}
+-- Players waiting for a human opponent, seated at their own table.
+local queued: { [Player]: { mode: Mode, entry: TableService.Entry, since: number } } = {}
 local shotLimiter = RateLimiter.new(1, 2)
 local startLimiter = RateLimiter.new(0.5, 2)
 
 local function snapshot(entry: TableService.Entry): Remotes.MatchSnapshot
 	local match = matches[entry.id]
 	if not match then
+		local host = entry.occupants[1]
 		return {
 			tableId = entry.id,
-			phase = "Idle",
+			phase = if host and queued[host] then "Queue" else "Idle",
+			mode = if host and queued[host] then queued[host].mode else nil,
 			players = {},
 			current = 1,
 			isBreak = false,
@@ -103,6 +114,7 @@ local function snapshot(entry: TableService.Entry): Remotes.MatchSnapshot
 	return {
 		tableId = entry.id,
 		phase = match.phase,
+		mode = match.mode,
 		players = players,
 		current = match.rules.current,
 		isBreak = match.rules.isBreak,
@@ -133,6 +145,10 @@ local function findBall(balls: { PoolPhysics.BallState }, id: number): PoolPhysi
 	return nil
 end
 
+local MatchService = {
+	Finished = Signal.new(), -- (entry, mode, winner: Player?, loser: Player?)
+}
+
 local playShot: (Match, PoolPhysics.ShotParams, number?, { x: number, y: number }?) -> ()
 local startTurn: (Match) -> ()
 
@@ -155,14 +171,33 @@ local function award(match: Match, winner: number, leaver: number?)
 		end
 		QuestService.event(player, "matches")
 		if index ~= leaver then
-			local level = match.seats[3 - index].level or "Medium"
-			local coins, xp = Progression.matchReward(level, won)
+			local coins, xp
+			if match.mode == "Bot" then
+				coins, xp = Progression.matchReward(match.seats[3 - index].level or "Medium", won)
+			else
+				local rewards = if match.mode == "Ranked" then Social.RankedRewards else Social.PvpRewards
+				coins = if won then rewards.win else rewards.loss
+				xp = if won then Economy.Xp.Win else Economy.Xp.Loss
+			end
+			coins = math.floor(coins * SocialService.rewardMultiplier(player))
 			DataService.addCurrency(player, "coins", coins, "Gameplay", if won then "MatchWin" else "MatchPlayed")
 			DataService.notify(player, "NOTIFY_COINS", { amount = coins })
 			DataService.addXp(player, xp)
 			AnalyticsService.funnel(player, AnalyticsService.Funnel.MatchFinished, "MatchFinished")
 		end
 		DataService.changed(player)
+	end
+	-- Ranked: Elo between the two humans (a leaver loses rating too).
+	local a, b = match.seats[1].player, match.seats[2].player
+	local dataA = if a then DataService.get(a) else nil
+	local dataB = if b then DataService.get(b) else nil
+	if match.mode == "Ranked" and a and b and dataA and dataB then
+		dataA.rating, dataB.rating =
+			Progression.elo(dataA.rating, dataB.rating, if winner == 1 then 1 else 0, Social.RatingK)
+		LeaderboardService.submit("Rating", a, dataA.rating)
+		LeaderboardService.submit("Rating", b, dataB.rating)
+		DataService.changed(a)
+		DataService.changed(b)
 	end
 end
 
@@ -173,6 +208,7 @@ local function finish(match: Match, winner: number, reasonKey: string, leaver: n
 	match.turn += 1
 	award(match, winner, leaver)
 	broadcast(match.entry)
+	MatchService.Finished:Fire(match.entry, match.mode, match.seats[winner].player, match.seats[3 - winner].player)
 end
 
 -- Stats, XP, spirits, quests and the shot-of-the-day board for one shot of a human.
@@ -416,7 +452,29 @@ local function onShot(player: Player, payload: unknown)
 	playShot(match, shot, calledPocket, cueBallPos)
 end
 
-local function startMatch(player: Player, entry: TableService.Entry, level: string, tutorial: boolean)
+local function humanSeat(player: Player, baseCue: boolean): Seat
+	return {
+		player = player,
+		level = nil,
+		name = player.DisplayName,
+		userId = player.UserId,
+		timeouts = 0,
+		cue = CueService.stats(player, baseCue),
+	}
+end
+
+local function botSeat(level: string): Seat
+	return {
+		player = nil,
+		level = level,
+		name = `BOT_{string.upper(level)}`,
+		userId = 0,
+		timeouts = 0,
+		cue = CueService.stats(nil, true),
+	}
+end
+
+local function startMatch(entry: TableService.Entry, seats: { Seat }, mode: Mode, tutorial: boolean)
 	local existing = matches[entry.id]
 	if existing and existing.phase == "Playing" then
 		return
@@ -427,27 +485,12 @@ local function startMatch(player: Player, entry: TableService.Entry, level: stri
 		TableService.rack(entry)
 	end
 	local variant = Rules.Variants[entry.variant]
+	local breaker = if mode == "Bot" then 1 else math.random(1, 2)
 	local match: Match = {
 		entry = entry,
-		seats = {
-			{
-				player = player,
-				level = nil,
-				name = player.DisplayName,
-				userId = player.UserId,
-				timeouts = 0,
-				cue = CueService.stats(player, tutorial),
-			},
-			{
-				player = nil,
-				level = level,
-				name = `BOT_{string.upper(level)}`,
-				userId = 0,
-				timeouts = 0,
-				cue = CueService.stats(nil, true),
-			},
-		},
-		rules = { current = 1, groups = {}, isBreak = true },
+		mode = mode,
+		seats = seats,
+		rules = { current = breaker, groups = {}, isBreak = true },
 		variant = variant,
 		phase = "Playing",
 		ballInHand = true,
@@ -467,11 +510,67 @@ local function startMatch(player: Player, entry: TableService.Entry, level: stri
 	startTurn(match)
 end
 
+-- Two humans at `entry` (both already seated there).
+function MatchService.startPvp(entry: TableService.Entry, a: Player, b: Player, mode: Mode)
+	local base = mode == "Ranked"
+	startMatch(entry, { humanSeat(a, base), humanSeat(b, base) }, mode, false)
+end
+
+function MatchService.isPlaying(entry: TableService.Entry): boolean
+	local match = matches[entry.id]
+	return match ~= nil and match.phase == "Playing"
+end
+
+local function leaveQueue(player: Player)
+	local entry = queued[player]
+	if entry then
+		queued[player] = nil
+		broadcast(entry.entry)
+	end
+end
+
+-- Queues a seated player for a human opponent; pairs with someone already waiting in the same mode.
+local function enqueue(player: Player, entry: TableService.Entry, mode: Mode)
+	for other, waiting in queued do
+		if other ~= player and waiting.mode == mode then
+			queued[other] = nil
+			local host = waiting.entry
+			if TableService.seatAt(player, host, 2) then
+				MatchService.startPvp(host, other, player, mode)
+				return
+			end
+		end
+	end
+	local since = os.clock()
+	queued[player] = { mode = mode, entry = entry, since = since }
+	broadcast(entry)
+	task.delay(Social.QueueSeconds, function()
+		local waiting = queued[player]
+		if waiting and waiting.since == since then
+			leaveQueue(player)
+			DataService.notify(player, "PVP_NO_OPPONENT")
+		end
+	end)
+end
+
+-- payload: a bot level ("Easy" | "Medium" | "Hard") or "Casual" / "Ranked" for a human opponent.
 local function onStart(player: Player, payload: unknown)
+	local entry, index = TableService.tableOf(player)
+	if not startLimiter:Allow(player) or not entry or index ~= 1 or entry.id == Tables.KingTableId then
+		return
+	end
+	leaveQueue(player)
+	if payload == "Cancel" then
+		return
+	end
+	if entry.occupants[2] and not MatchService.isPlaying(entry) then
+		TableService.unseat(entry.occupants[2]) -- the previous opponent's seat is freed for a new match
+	end
 	local level = Validate.botLevel(payload)
-	local entry = TableService.tableOf(player)
-	if startLimiter:Allow(player) and level and entry then
-		startMatch(player, entry, level, false)
+	if level then
+		startMatch(entry, { humanSeat(player, false), botSeat(level) }, "Bot", false)
+	elseif payload == "Casual" or payload == "Ranked" then
+		enqueue(player, entry, payload)
 	end
 end
 
@@ -480,8 +579,8 @@ local function onTutorial(player: Player)
 		return
 	end
 	local entry = TableService.tableOf(player) or TableService.get(Tutorial.TableId)
-	if entry and (TableService.tableOf(player) == entry or TableService.seat(player, entry)) then
-		startMatch(player, entry, Tutorial.BotLevel, true)
+	if entry and TableService.seatAt(player, entry, 1) then
+		startMatch(entry, { humanSeat(player, true), botSeat(Tutorial.BotLevel) }, "Bot", true)
 	end
 end
 
@@ -506,19 +605,26 @@ local function onDebug(player: Player, payload: unknown)
 end
 
 local function onUnseated(player: Player, entry: TableService.Entry)
+	queued[player] = nil
 	local match = matches[entry.id]
+	local inMatch = false
 	if match then
+		for _, seat in match.seats do
+			inMatch = inMatch or seat.player == player
+		end
+	end
+	if match and inMatch then
 		match.turn += 1 -- invalidates timers and a thinking bot
 		if match.phase == "Playing" and match.started then
 			local leaver = if match.seats[1].player == player then 1 else 2
 			finish(match, 3 - leaver, "RULE_LOSS_LEFT", leaver)
+		elseif match.phase == "Playing" then
+			MatchService.Finished:Fire(entry, match.mode, nil, nil) -- cancelled before the first shot
 		end
 		matches[entry.id] = nil
 	end
 	broadcast(entry)
 end
-
-local MatchService = {}
 
 function MatchService.Start()
 	Remotes.Event("Shot").OnServerEvent:Connect(onShot)

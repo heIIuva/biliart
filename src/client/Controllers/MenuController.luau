@@ -4,6 +4,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SocialService = game:GetService("SocialService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Cues = require(Shared.Config.Cues)
@@ -288,7 +289,7 @@ function MenuController.Init()
 	menuButtons = Kit.frame("Buttons", gui, {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 16, 1, -16),
-		Size = UDim2.fromOffset(140, 260),
+		Size = UDim2.fromOffset(140, 380),
 		BackgroundTransparency = 1,
 	})
 	local layout = Instance.new("UIListLayout")
@@ -316,7 +317,61 @@ function MenuController.Init()
 	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 end
 
+-- Invite friends: the invite carries our user id so the server can reward us when they join.
+local function invite()
+	local player = Players.LocalPlayer
+	pcall(function()
+		if SocialService:CanSendGameInviteAsync(player) then
+			local options = Instance.new("ExperienceInviteOptions")
+			options.LaunchData = tostring(player.UserId)
+			SocialService:PromptGameInvite(player, options)
+		end
+	end)
+end
+
+-- Codes: a text box only the player sees; the server checks the code against its list.
+local function buildCodes()
+	local panel = Kit.frame("Codes", gui, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(360, 170),
+		Visible = false,
+		Active = true,
+	})
+	Kit.corner(panel, 0.08)
+	local box = Instance.new("TextBox")
+	box.Name = "Code"
+	box.AnchorPoint = Vector2.new(0.5, 0)
+	box.Position = UDim2.new(0.5, 0, 0, 20)
+	box.Size = UDim2.fromOffset(300, 48)
+	box.Font = Enum.Font.GothamBold
+	box.TextSize = 22
+	box.PlaceholderText = Text.get("CODE_PLACEHOLDER")
+	box.Text = ""
+	box.ClearTextOnFocus = false
+	box.Parent = panel
+	Kit.button("Redeem", panel, "CODE_REDEEM", {
+		Position = UDim2.fromOffset(30, 90),
+		Size = UDim2.fromOffset(140, 48),
+	}, function()
+		Remotes.Event("RedeemCode"):FireServer(box.Text)
+		box.Text = ""
+	end)
+	Kit.button("CloseCodes", panel, "MENU_CLOSE", {
+		Position = UDim2.fromOffset(190, 90),
+		Size = UDim2.fromOffset(140, 48),
+		BackgroundColor3 = Kit.GREY,
+	}, function()
+		panel.Visible = false
+	end)
+	MenuController.addButton("MENU_CODES", 20, function()
+		panel.Visible = true
+	end)
+end
+
 function MenuController.Start()
+	MenuController.addButton("MENU_INVITE", 19, invite)
+	buildCodes()
 	PlayerDataController.Changed:Connect(refresh)
 	TableViewController.SeatChanged:Connect(function(tableId)
 		menuButtons.Visible = tableId == nil

@@ -16,7 +16,7 @@ local IVORY = Color3.fromRGB(245, 243, 230)
 local TOAST_SECONDS = 2.5
 
 export type Callbacks = {
-	onStart: (level: string) -> (),
+	onStart: (level: string) -> (), -- bot level, or "Casual" / "Ranked" / "Cancel"
 	onAgain: () -> (),
 	onLeave: () -> (),
 }
@@ -26,6 +26,7 @@ export type PlayerLine = { name: string, groupKey: string?, active: boolean }
 export type Hud = {
 	setVisible: (visible: boolean) -> (),
 	showPicker: (visible: boolean) -> (),
+	showSearching: (visible: boolean) -> (),
 	showStatus: (left: PlayerLine?, right: PlayerLine?) -> (),
 	setTimer: (share: number) -> (),
 	setHint: (key: string?) -> (),
@@ -105,7 +106,7 @@ function MatchHud.new(callbacks: Callbacks): Hud
 	local picker = frame("Picker", gui, {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(340, 300),
+		Size = UDim2.fromOffset(340, 420),
 		Visible = false,
 		Active = true,
 	})
@@ -121,12 +122,41 @@ function MatchHud.new(callbacks: Callbacks): Hud
 			callbacks.onStart(level)
 		end)
 	end
+	for i, mode in { "Casual", "Ranked" } do
+		button(`{mode}Button`, picker, if mode == "Casual" then "MATCH_VS_PLAYER" else "MATCH_RANKED", {
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, 236 + (i - 1) * 60),
+			Size = UDim2.fromOffset(260, 50),
+			BackgroundColor3 = Color3.fromRGB(120, 80, 20),
+		}, function()
+			callbacks.onStart(mode)
+		end)
+	end
 	button("PickerLeaveButton", picker, "HUD_LEAVE", {
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 236),
+		Position = UDim2.new(0.5, 0, 0, 360),
 		Size = UDim2.fromOffset(260, 48),
 		BackgroundColor3 = Color3.fromRGB(60, 60, 60),
 	}, callbacks.onLeave)
+
+	-- Waiting for a human opponent.
+	local searching = frame("Searching", gui, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(340, 150),
+		Visible = false,
+		Active = true,
+	})
+	corner(searching, 0.08)
+	label("Title", searching, { Text = Text.get("MATCH_SEARCHING"), Size = UDim2.new(1, 0, 0, 70), TextSize = 22 })
+	button("CancelSearchButton", searching, "MATCH_CANCEL", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 80),
+		Size = UDim2.fromOffset(200, 48),
+		BackgroundColor3 = Color3.fromRGB(60, 60, 60),
+	}, function()
+		callbacks.onStart("Cancel")
+	end)
 
 	-- Status bar: left player | timer | right player.
 	local bar = frame("Status", gui, {
@@ -227,6 +257,9 @@ function MatchHud.new(callbacks: Callbacks): Hud
 		end,
 		showPicker = function(visible: boolean)
 			picker.Visible = visible
+		end,
+		showSearching = function(visible: boolean)
+			searching.Visible = visible
 		end,
 		showStatus = function(left: PlayerLine?, right: PlayerLine?)
 			bar.Visible = left ~= nil

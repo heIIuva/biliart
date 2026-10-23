@@ -68,3 +68,13 @@
   (wins, shot of the day, boards in the lobby). Matches pay fixed coins/XP; leaving records a loss only.
 - Client: currency bar, spirit index (silhouettes, "???" for secrets), daily, quests, cues menus,
   toasts, leaderboard boards; tutorial is offered only until done; aim guide length follows the cue.
+
+## Phase 7 — PvP and social
+- Two seats per table (head/foot); a third table and the gilded Tiger table for King of the table.
+- `MatchService` modes: Bot, Casual and Ranked PvP (server queue, 20 s then "try the bot"), King.
+  Ranked: base cue for everyone, Elo (K = 32, tested), rating board. PvP rewards are fixed coins.
+- `KingTableService`: queue at the Tiger table, winner stays with a crown, fixed reward per defense,
+  big spectator screen with a live top-down map of the balls (`BigScreenController`).
+- `SocialService`: friends bonus (+10% per friend, max +30%), invites (LaunchData → reward delivered
+  to the inviter's saved data via ProfileStore messages), one-time group bonus (group id to set),
+  codes, quick chat phrases and emotes shown above the sender's head.

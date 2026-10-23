@@ -42,6 +42,7 @@ export type PlayerData = {
 	purchases: { recentReceiptIds: { string }, starterPack: boolean },
 	boosts: { [string]: number }, -- boost id -> os.time() it ends
 	redeemedCodes: { [string]: boolean },
+	groupRewardClaimed: boolean,
 	settings: { music: number, sfx: number, announcer: number, quality: string },
 	tutorialDone: boolean,
 	firstJoinTime: number,
@@ -82,6 +83,7 @@ function Progression.template(): PlayerData
 		purchases = { recentReceiptIds = {}, starterPack = false },
 		boosts = {},
 		redeemedCodes = {},
+		groupRewardClaimed = false,
 		settings = { music = 0.6, sfx = 1, announcer = 1, quality = "Auto" },
 		tutorialDone = false,
 		firstJoinTime = 0,
@@ -235,6 +237,13 @@ end
 function Progression.matchReward(level: string, won: boolean): (number, number)
 	local rewards = Economy.MatchRewards[level] or Economy.MatchRewards.Easy
 	return if won then rewards.win else rewards.loss, if won then Economy.Xp.Win else Economy.Xp.Loss
+end
+
+-- Elo update for a ranked match. scoreA: 1 if A won, 0 if A lost. Returns the new ratings.
+function Progression.elo(ratingA: number, ratingB: number, scoreA: number, k: number): (number, number)
+	local expectedA = 1 / (1 + 10 ^ ((ratingB - ratingA) / 400))
+	local delta = math.round(k * (scoreA - expectedA))
+	return ratingA + delta, ratingB - delta
 end
 
 function Progression.cue(id: string): Cues.Cue

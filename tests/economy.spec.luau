@@ -82,4 +82,14 @@ return {
 		local lossCoins = Progression.matchReward("Easy", false)
 		assert(lossCoins == Economy.MatchRewards.Easy.loss, "easy loss")
 	end,
+
+	["ranked: Elo moves points from loser to winner, upsets move more"] = function()
+		local a, b = Progression.elo(1000, 1000, 1, 32)
+		assert(a == 1016 and b == 984, `even match: {a} {b}`)
+		local favWin = Progression.elo(1400, 1000, 1, 32)
+		local underWin = Progression.elo(1000, 1400, 1, 32)
+		assert(favWin - 1400 < underWin - 1000, "an upset gains more")
+		local x, y = Progression.elo(1234, 987, 0, 32)
+		assert(x + y == 1234 + 987, "zero-sum")
+	end,
 }

@@ -25,6 +25,7 @@ type Profile = {
 	EndSession: (any) -> (),
 	IsActive: (any) -> boolean,
 	OnSessionEnd: any,
+	MessageHandler: (any, (any, () -> ()) -> ()) -> (),
 }
 
 local store = ProfileStore.New(STORE_NAME, Progression.template())
@@ -34,7 +35,15 @@ local dirty: { [Player]: boolean } = {}
 local DataService = {
 	Loaded = Signal.new(), -- (player, data)
 	LevelUp = Signal.new(), -- (player, level)
+	Message = Signal.new(), -- (player, message): a message sent to the player's saved data
 }
+
+-- Sends a message to a player's saved data; delivered when (or as soon as) they are online.
+function DataService.message(userId: number, message: { [string]: any })
+	task.spawn(pcall, function()
+		store:MessageAsync(tostring(userId), message)
+	end)
+end
 
 -- Server-side text for things the client can't localize (kick messages).
 local function localized(player: Player, key: string): string
@@ -113,6 +122,12 @@ local function onPlayerAdded(player: Player)
 	end
 	profile:AddUserId(player.UserId)
 	profile:Reconcile()
+	profile:MessageHandler(function(message, processed)
+		if type(message) == "table" then
+			DataService.Message:Fire(player, message)
+		end
+		processed()
+	end)
 	Progression.migrate(profile.Data :: any)
 	profile.OnSessionEnd:Connect(function()
 		profiles[player] = nil

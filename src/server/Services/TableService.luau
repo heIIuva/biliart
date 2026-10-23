@@ -1,6 +1,6 @@
 --!strict
--- Tables in the world and seating (one player per table). Holds each table's balls;
--- matches on a table are run by MatchService.
+-- Tables in the world and seating: two seats per table (head and foot end). Holds each table's
+-- balls; matches are run by MatchService. The prompt of the King table only queues (KingTableService).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,20 +21,22 @@ export type Entry = {
 	variant: TableGeometry.Variant,
 	geometry: TableGeometry.Geometry,
 	surface: CFrame,
-	seat: CFrame,
+	seats: { CFrame },
 	balls: { PoolPhysics.BallState },
 	prompt: ProximityPrompt,
-	occupant: Player?,
+	occupants: { [number]: Player }, -- by seat index
+	model: Model,
 }
 
 local tables: { [string]: Entry } = {}
-local seated: { [Player]: Entry } = {}
+local seated: { [Player]: { entry: Entry, index: number } } = {}
 local actionLimiter = RateLimiter.new(2, 4)
 local random = Random.new()
 
 local TableService = {
-	Seated = Signal.new(), -- (player, entry)
-	Unseated = Signal.new(), -- (player, entry): left, died or disconnected
+	Seated = Signal.new(), -- (player, entry, index)
+	Unseated = Signal.new(), -- (player, entry, index): left, died or disconnected
+	KingPrompt = Signal.new(), -- (player): someone wants to play at the King table
 }
 
 local function snapshot(entry: Entry): Remotes.TableSnapshot
@@ -46,28 +48,14 @@ local function rootOf(player: Player): BasePart?
 	return if character then character:FindFirstChild("HumanoidRootPart") :: BasePart? else nil
 end
 
-local function seat(player: Player, entry: Entry)
-	local root = rootOf(player)
-	if seated[player] or entry.occupant or not root then
-		return
-	end
-	seated[player] = entry
-	entry.occupant = player
-	entry.prompt.Enabled = false
-	root.Anchored = true
-	root.CFrame = entry.seat
-	Remotes.Event("SeatChanged"):FireClient(player, entry.id)
-	TableService.Seated:Fire(player, entry)
-end
-
 local function unseat(player: Player)
-	local entry = seated[player]
-	if not entry then
+	local place = seated[player]
+	if not place then
 		return
 	end
 	seated[player] = nil
-	entry.occupant = nil
-	entry.prompt.Enabled = true
+	place.entry.occupants[place.index] = nil
+	place.entry.prompt.Enabled = not place.entry.occupants[1] or place.entry.id == Tables.KingTableId
 	local root = rootOf(player)
 	if root then
 		root.Anchored = false
@@ -75,21 +63,45 @@ local function unseat(player: Player)
 	if player.Parent then
 		Remotes.Event("SeatChanged"):FireClient(player, nil)
 	end
-	TableService.Unseated:Fire(player, entry)
+	TableService.Unseated:Fire(player, place.entry, place.index)
 end
 
--- Seats the player if the table is free; true on success.
-function TableService.seat(player: Player, entry: Entry): boolean
-	seat(player, entry)
-	return seated[player] == entry
+-- Seats the player at a free seat (leaving any other seat first); true on success.
+function TableService.seatAt(player: Player, entry: Entry, index: number): boolean
+	local root = rootOf(player)
+	local current = seated[player]
+	if current and current.entry == entry and current.index == index then
+		return true
+	end
+	if entry.occupants[index] or not root then
+		return false
+	end
+	unseat(player)
+	seated[player] = { entry = entry, index = index }
+	entry.occupants[index] = player
+	entry.prompt.Enabled = entry.id == Tables.KingTableId
+	root.Anchored = true
+	root.CFrame = entry.seats[index]
+	Remotes.Event("SeatChanged"):FireClient(player, entry.id)
+	TableService.Seated:Fire(player, entry, index)
+	return true
+end
+
+function TableService.unseat(player: Player)
+	unseat(player)
 end
 
 function TableService.get(tableId: string): Entry?
 	return tables[tableId]
 end
 
-function TableService.tableOf(player: Player): Entry?
-	return seated[player]
+-- The player's table and seat index, if seated.
+function TableService.tableOf(player: Player): (Entry?, number)
+	local place = seated[player]
+	if place then
+		return place.entry, place.index
+	end
+	return nil, 0
 end
 
 -- Replaces the table's balls; `broadcast` sends a TableState so clients redraw them.
@@ -109,7 +121,7 @@ function TableService.Init()
 	folder.Name = "Tables"
 	for _, placement in Tables.Placements do
 		local variant: TableGeometry.Variant = placement.variant :: any
-		local built = TableBuilder.build(placement.id, variant, CFrame.new(placement.x, 0, placement.z))
+		local built = TableBuilder.build(placement.id, variant, CFrame.new(placement.x, 0, placement.z), placement.king)
 		local prompt = built.model:FindFirstChild("PlayPrompt", true) :: ProximityPrompt
 		local geometry = TableGeometry.get(variant)
 		local entry: Entry = {
@@ -117,14 +129,19 @@ function TableService.Init()
 			variant = variant,
 			geometry = geometry,
 			surface = built.surface,
-			seat = built.seat,
+			seats = built.seats,
 			balls = Rack.eightBall(geometry, random:NextInteger(1, 2147483646)),
 			prompt = prompt,
-			occupant = nil,
+			occupants = {},
+			model = built.model,
 		}
 		tables[entry.id] = entry
 		prompt.Triggered:Connect(function(player)
-			seat(player, entry)
+			if entry.id == Tables.KingTableId then
+				TableService.KingPrompt:Fire(player)
+			else
+				TableService.seatAt(player, entry, 1)
+			end
 		end)
 		built.model.Parent = folder
 	end

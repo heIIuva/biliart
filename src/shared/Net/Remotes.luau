@@ -62,7 +62,8 @@ export type MatchPlayer = {
 -- shot has played back) and when the match starts or ends.
 export type MatchSnapshot = {
 	tableId: string,
-	phase: "Idle" | "Playing" | "Over",
+	phase: "Idle" | "Queue" | "Playing" | "Over", -- Queue: waiting for a human opponent
+	mode: string?, -- "Bot" | "Casual" | "Ranked" | "King"
 	players: { MatchPlayer },
 	current: number, -- index into players
 	isBreak: boolean,
@@ -82,6 +83,8 @@ export type Notification = {
 
 export type LeaderboardRow = { rank: number, name: string, score: number }
 
+export type QuickChatMessage = { userId: number, id: string }
+
 local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	Shot = "RemoteEvent", -- client -> server: ShotParams (+ calledPocket, cueBallPos); shooter's turn only
 	ShotResult = "RemoteEvent", -- server -> clients: ShotResultPayload
@@ -89,7 +92,7 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	MatchState = "RemoteEvent", -- server -> clients: MatchSnapshot
 	SeatChanged = "RemoteEvent", -- server -> client: tableId or nil
 	LeaveTable = "RemoteEvent", -- client -> server: no payload
-	StartMatch = "RemoteEvent", -- client -> server: bot level "Easy" | "Medium" | "Hard"
+	StartMatch = "RemoteEvent", -- client -> server: bot level "Easy" | "Medium" | "Hard", or "Casual" | "Ranked"
 	StartTutorial = "RemoteEvent", -- client -> server: no payload
 	Announcement = "RemoteEvent", -- server -> clients: Announcement
 	Debug = "RemoteEvent", -- client -> server, Studio only: { action = "title", id = titleId }
@@ -105,6 +108,9 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	EquipSpirit = "RemoteEvent", -- client -> server: spirit id
 	TutorialDone = "RemoteEvent", -- client -> server: no payload
 	Leaderboards = "RemoteEvent", -- server -> clients: { [boardId]: { LeaderboardRow } }
+	RedeemCode = "RemoteEvent", -- client -> server: code text (never shown to anyone)
+	QuickChat = "RemoteEvent", -- client -> server: phrase or emote id
+	QuickChatShown = "RemoteEvent", -- server -> clients: QuickChatMessage
 }
 
 local FOLDER_NAME = "Remotes"

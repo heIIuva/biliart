@@ -10,6 +10,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared.Net.Remotes)
+local Tables = require(Shared.Config.Tables)
 local Text = require(Shared.Util.Text)
 local MatchHud = require(script.Parent.Parent.UI.MatchHud)
 local TableViewController = require(script.Parent.TableViewController)
@@ -79,8 +80,10 @@ local function render()
 	shown = snapshot
 	hud.setVisible(true)
 	local phase = if snapshot then snapshot.phase else "Idle"
-	hud.showPicker(phase == "Idle")
-	if not snapshot or phase == "Idle" then
+	local kingTable = view.id == Tables.KingTableId
+	hud.showPicker(phase == "Idle" and not kingTable)
+	hud.showSearching(phase == "Queue")
+	if not snapshot or phase == "Idle" or phase == "Queue" then
 		hud.showStatus(nil, nil)
 		hud.setHint(nil)
 		hud.showResult(nil, nil)
@@ -125,7 +128,9 @@ end
 function MatchController.Init()
 	hud = MatchHud.new({
 		onStart = function(level)
-			lastLevel = level
+			if level ~= "Cancel" then
+				lastLevel = level
+			end
 			Remotes.Event("StartMatch"):FireServer(level)
 		end,
 		onAgain = function()
