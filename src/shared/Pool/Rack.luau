@@ -55,4 +55,32 @@ function Rack.eightBall(geometry: TableGeometry.Geometry, seed: number): { PoolP
 	return balls
 end
 
+-- Puts `ball` on the first free spot starting at (x, y) and stepping along X by `stepX`
+-- (used to respot the 8 on the foot spot). Returns false if no spot is free before the rail.
+function Rack.placeFree(
+	geometry: TableGeometry.Geometry,
+	balls: { PoolPhysics.BallState },
+	ball: PoolPhysics.BallState,
+	x: number,
+	y: number,
+	stepX: number
+): boolean
+	local R = geometry.ballRadius
+	while math.abs(x) <= geometry.halfLength - R do
+		local free = true
+		for _, b in balls do
+			if b ~= ball and b.status == "Stationary" and (b.x - x) ^ 2 + (b.y - y) ^ 2 < (2 * R) ^ 2 then
+				free = false
+				break
+			end
+		end
+		if free then
+			ball.x, ball.y, ball.status = x, y, "Stationary"
+			return true
+		end
+		x += stepX
+	end
+	return false
+end
+
 return Rack

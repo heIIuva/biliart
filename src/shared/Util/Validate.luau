@@ -42,4 +42,34 @@ function Validate.shotParams(value: unknown): PoolPhysics.ShotParams?
 	return { angle = angle, power = power, spinX = spinX, spinY = spinY, elevation = elevation }
 end
 
+-- Pocket id 1..6, or nil.
+function Validate.pocket(value: unknown): number?
+	local n = Validate.finite(value)
+	if n and n == math.floor(n) and n >= 1 and n <= 6 then
+		return n
+	end
+	return nil
+end
+
+-- A table point { x, y } with finite coordinates (range is checked against the table by the caller).
+function Validate.point(value: unknown): { x: number, y: number }?
+	if type(value) ~= "table" then
+		return nil
+	end
+	local raw = value :: { [unknown]: unknown }
+	local x, y = Validate.finite(raw.x), Validate.finite(raw.y)
+	if x and y then
+		return { x = x, y = y }
+	end
+	return nil
+end
+
+-- Bot difficulty name, or nil.
+function Validate.botLevel(value: unknown): string?
+	if value == "Easy" or value == "Medium" or value == "Hard" then
+		return value
+	end
+	return nil
+end
+
 return Validate

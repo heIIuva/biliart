@@ -349,6 +349,20 @@ local function onSeatChanged(tableId: string?)
 	TableViewController.SeatChanged:Fire(tableId)
 end
 
+-- Moves a resting ball locally (ball in hand preview); the server gets the spot with the shot.
+function TableViewController.moveBall(view: View, id: number, x: number, y: number)
+	for _, b in view.balls do
+		if b.id == id then
+			b.x, b.y = x, y
+			local part = view.parts[id]
+			if part then
+				local R = view.geometry.ballRadius
+				part.CFrame = TableSpace.ballCFrame(view.surface, x, y, R, b.qx or 0, b.qy or 0, b.qz or 0, b.qw or 1)
+			end
+		end
+	end
+end
+
 function TableViewController.seatedView(): View?
 	return if seatedId then views[seatedId] else nil
 end

@@ -34,13 +34,37 @@ export type ShotResultPayload = {
 	balls: { PoolPhysics.BallState },
 }
 
+export type MatchPlayer = {
+	name: string, -- player display name, or a localization key for bots
+	userId: number, -- 0 for bots
+	isBot: boolean,
+	group: string?, -- "Solids" | "Stripes", nil while the table is open
+}
+
+-- Server -> clients: the match at a table. Sent at the start of every turn (after the previous
+-- shot has played back) and when the match starts or ends.
+export type MatchSnapshot = {
+	tableId: string,
+	phase: "Idle" | "Playing" | "Over",
+	players: { MatchPlayer },
+	current: number, -- index into players
+	isBreak: boolean,
+	ballInHand: boolean,
+	kitchenOnly: boolean, -- ball in hand behind the head string (break)
+	mustCall: boolean, -- the shooter must call a pocket (shooting the 8)
+	turnEndsAt: number, -- workspace:GetServerTimeNow() when the turn times out
+	reasonKey: string?, -- outcome of the previous shot (localization key)
+	winner: number?,
+}
+
 local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
-	Shot = "RemoteEvent", -- client -> server: ShotParams (seated player, table idle)
+	Shot = "RemoteEvent", -- client -> server: ShotParams (+ calledPocket, cueBallPos); shooter's turn only
 	ShotResult = "RemoteEvent", -- server -> clients: ShotResultPayload
-	TableState = "RemoteEvent", -- server -> clients: TableSnapshot (on join, after a re-rack)
+	TableState = "RemoteEvent", -- server -> clients: TableSnapshot (on join, on a new rack)
+	MatchState = "RemoteEvent", -- server -> clients: MatchSnapshot
 	SeatChanged = "RemoteEvent", -- server -> client: tableId or nil
 	LeaveTable = "RemoteEvent", -- client -> server: no payload
-	Rerack = "RemoteEvent", -- client -> server: free play only, no payload
+	StartMatch = "RemoteEvent", -- client -> server: bot level "Easy" | "Medium" | "Hard"
 }
 
 local FOLDER_NAME = "Remotes"

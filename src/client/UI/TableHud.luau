@@ -1,6 +1,6 @@
 --!strict
 -- On-screen controls at the table, mobile first: power bar (left), fine aim wheel (right),
--- spin/elevation panel, stand-up and re-rack buttons. All texts come from localization keys.
+-- spin/elevation panel, stand-up button. All texts come from localization keys.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -27,7 +27,6 @@ export type Callbacks = {
 	onSpin: (spinX: number, spinY: number) -> (),
 	onElevation: (radians: number) -> (),
 	onLeave: () -> (),
-	onRerack: () -> (),
 }
 
 export type Hud = {
@@ -312,17 +311,10 @@ function TableHud.new(callbacks: Callbacks): Hud
 	-- Bottom center: the top-left corner belongs to the Roblox chat window, which swallows input there.
 	button(gui, "HUD_LEAVE", {
 		Name = "LeaveButton",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(0.5, -6, 1, -EDGE),
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -EDGE),
 		Size = UDim2.fromOffset(150, 48),
 	}, callbacks.onLeave)
-	button(gui, "HUD_RERACK", {
-		Name = "RerackButton",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0.5, 6, 1, -EDGE),
-		Size = UDim2.fromOffset(200, 48),
-		BackgroundColor3 = DARK,
-	}, callbacks.onRerack)
 
 	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 

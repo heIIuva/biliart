@@ -46,4 +46,15 @@ return {
 		assert(Validate.shotParams(shot({ angle = 1e9 })) == nil, "absurd angle")
 		assert(Validate.shotParams(shot({ power = 1, spinX = 0, spinY = Physics.MaxTipOffset })), "edges are valid")
 	end,
+
+	["pocket, point and bot level"] = function()
+		assert(Validate.pocket(1) == 1 and Validate.pocket(6) == 6, "valid pockets")
+		for _, bad in { 0, 7, 2.5, "3", 0 / 0 } :: { any } do
+			assert(Validate.pocket(bad) == nil, `pocket {bad} accepted`)
+		end
+		local p = Validate.point({ x = 0.1, y = -0.2 })
+		assert(p and p.x == 0.1 and p.y == -0.2, "valid point")
+		assert(Validate.point({ x = 0 / 0, y = 0 }) == nil and Validate.point({ x = 1 }) == nil, "bad points")
+		assert(Validate.botLevel("Hard") == "Hard" and Validate.botLevel("Godlike") == nil, "bot level")
+	end,
 }

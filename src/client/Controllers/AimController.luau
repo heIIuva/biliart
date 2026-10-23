@@ -1,8 +1,10 @@
 --!strict
--- Aiming and shooting at the seated table.
+-- Aiming and shooting at the seated table, on the local player's turn.
 -- Touch: the finger on the table points the cue; power bar on the left, fine wheel on the right.
 -- Mouse: the cursor points the cue; hold LMB and pull back for power, release to shoot
--- (RMB cancels); wheel / arrow keys fine-tune. Only the intent goes to the server.
+-- (RMB cancels); wheel / arrow keys fine-tune.
+-- Ball in hand: press on the cue ball and drag it. Shooting the 8: tap a pocket to call it.
+-- Only the intent goes to the server.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -14,20 +16,30 @@ local AimPredictor = require(Shared.Pool.AimPredictor)
 local Controls = require(Shared.Config.Controls)
 local Physics = require(Shared.Config.Physics)
 local PoolPhysics = require(Shared.Pool.PoolPhysics)
+local PoolRules = require(Shared.Pool.PoolRules)
 local Remotes = require(Shared.Net.Remotes)
 local TableSpace = require(Shared.World.TableSpace)
 local TableHud = require(script.Parent.Parent.UI.TableHud)
+local MatchController = require(script.Parent.MatchController)
 local TableViewController = require(script.Parent.TableViewController)
 
 type View = TableViewController.View
 
 local LINE_THICKNESS = 0.006 -- meters
 local CUE_DIAMETER = 0.025
+local GRAB_RADIUS_TOUCH = 0.08 -- how close to the cue ball a press starts dragging it (meters)
+local GRAB_RADIUS_MOUSE = 0.04
+local POCKET_PICK_RADIUS = 0.09
+local POCKET_COLOR = Color3.fromRGB(255, 255, 255)
+local POCKET_CALLED_COLOR = Color3.fromRGB(240, 190, 60)
 
 local aim = { angle = 0, power = 0, spinX = 0, spinY = 0, elevation = 0 }
 local waitingSince: number? = nil -- shot sent, result not arrived yet
 local aimTouch: InputObject? = nil
 local pullStart: { x: number, y: number }? = nil
+local dragInput: InputObject? = nil -- touch or mouse press moving the cue ball (ball in hand)
+local calledPocket: number? = nil
+local shownTurn = 0 -- turnEndsAt of the turn the aim state belongs to
 local hud: TableHud.Hud
 local visuals: Folder
 local guideMain: Part
@@ -35,6 +47,7 @@ local guideTarget: Part
 local guideCue: Part
 local ghost: Part
 local cueStick: Part
+local pocketMarkers: { Part } = {}
 
 local function cueBall(view: View): PoolPhysics.BallState?
 	for _, b in view.balls do
@@ -48,7 +61,7 @@ end
 -- The seated view, if the player may aim right now.
 local function aimingView(): View?
 	local view = TableViewController.seatedView()
-	if view and view.playback == nil and waitingSince == nil and cueBall(view) then
+	if view and view.playback == nil and waitingSince == nil and MatchController.canShoot() and cueBall(view) then
 		return view
 	end
 	return nil
@@ -163,15 +176,24 @@ end
 
 local function shoot(power: number)
 	setPower(0)
-	if power < Controls.MinPower or not aimingView() then
+	local view = aimingView()
+	local match = MatchController.current()
+	if power < Controls.MinPower or not view or not match then
 		return
 	end
+	if match.mustCall and not calledPocket then
+		MatchController.flash("HINT_CALL_POCKET")
+		return
+	end
+	local cue = cueBall(view) :: PoolPhysics.BallState
 	Remotes.Event("Shot"):FireServer({
 		angle = aim.angle,
 		power = power,
 		spinX = aim.spinX,
 		spinY = aim.spinY,
 		elevation = aim.elevation,
+		calledPocket = if match.mustCall then calledPocket else nil,
+		cueBallPos = if match.ballInHand then { x = cue.x, y = cue.y } else nil,
 	})
 	waitingSince = os.clock()
 	aim.spinX, aim.spinY, aim.elevation = 0, 0, 0
@@ -179,9 +201,47 @@ local function shoot(power: number)
 	hud.setElevation(0)
 end
 
+-- Ball in hand: move the cue ball to a legal spot under the pointer (keeps the last legal one).
+local function dragCue(view: View, screen: Vector3)
+	local match = MatchController.current()
+	local x, y = tablePoint(view, screen)
+	if match and x and y and PoolRules.canPlaceCue(view.geometry, view.balls, x, y, match.kitchenOnly) then
+		TableViewController.moveBall(view, 0, x, y)
+	end
+end
+
+-- Handles presses that pick a pocket or grab the cue ball; true if the press was used.
+local function pressSpecial(view: View, input: InputObject): boolean
+	local match = MatchController.current()
+	local x, y = tablePoint(view, input.Position)
+	if not match or not x or not y then
+		return false
+	end
+	if match.mustCall then
+		for _, pocket in view.geometry.pockets do
+			if (pocket.x - x) ^ 2 + (pocket.y - y) ^ 2 < POCKET_PICK_RADIUS ^ 2 then
+				calledPocket = pocket.id
+				return true
+			end
+		end
+	end
+	local cue = cueBall(view)
+	local grab = if input.UserInputType == Enum.UserInputType.Touch then GRAB_RADIUS_TOUCH else GRAB_RADIUS_MOUSE
+	if match.ballInHand and cue and (cue.x - x) ^ 2 + (cue.y - y) ^ 2 < grab ^ 2 then
+		dragInput = input
+		return true
+	end
+	return false
+end
+
 local function onInputBegan(input: InputObject, processed: boolean)
 	local view = aimingView()
 	if processed or not view then
+		return
+	end
+	local press = input.UserInputType == Enum.UserInputType.Touch
+		or input.UserInputType == Enum.UserInputType.MouseButton1
+	if press and pressSpecial(view, input) then
 		return
 	end
 	if input.UserInputType == Enum.UserInputType.Touch then
@@ -203,6 +263,18 @@ local function onInputChanged(input: InputObject, processed: boolean)
 	if not view then
 		return
 	end
+	local drag = dragInput
+	if drag then
+		local same = input == drag
+			or (
+				drag.UserInputType == Enum.UserInputType.MouseButton1
+				and input.UserInputType == Enum.UserInputType.MouseMovement
+			)
+		if same then
+			dragCue(view, input.Position)
+			return
+		end
+	end
 	if input.UserInputType == Enum.UserInputType.Touch and input == aimTouch then
 		aimAt(view, input.Position)
 	elseif input.UserInputType == Enum.UserInputType.MouseMovement then
@@ -222,7 +294,19 @@ local function onInputChanged(input: InputObject, processed: boolean)
 end
 
 local function onInputEnded(input: InputObject)
-	if input == aimTouch then
+	local drag = dragInput
+	if
+		drag
+		and (
+			input == drag
+			or (
+				drag.UserInputType == Enum.UserInputType.MouseButton1
+				and input.UserInputType == Enum.UserInputType.MouseButton1
+			)
+		)
+	then
+		dragInput = nil
+	elseif input == aimTouch then
 		aimTouch = nil
 	elseif input.UserInputType == Enum.UserInputType.MouseButton1 and pullStart then
 		pullStart = nil
@@ -230,11 +314,35 @@ local function onInputEnded(input: InputObject)
 	end
 end
 
+local function drawPockets(view: View?, match: Remotes.MatchSnapshot?)
+	local show = view ~= nil and match ~= nil and match.mustCall
+	for i, marker in pocketMarkers do
+		local pocket = if view then view.geometry.pockets[i] else nil
+		if show and view and pocket then
+			marker.Transparency = 0.3
+			marker.Color = if calledPocket == pocket.id then POCKET_CALLED_COLOR else POCKET_COLOR
+			marker.CFrame = CFrame.new(TableSpace.toWorld(view.surface, pocket.x, pocket.y, 0.002))
+				* view.surface.Rotation
+				* CFrame.Angles(0, 0, math.pi / 2)
+		else
+			marker.Transparency = 1
+		end
+	end
+end
+
 local function update(dt: number)
 	if waitingSince and os.clock() - waitingSince > Controls.ShotResultTimeout then
 		waitingSince = nil
 	end
+	local match = MatchController.current()
+	local turn = if match then match.turnEndsAt else 0
+	if turn ~= shownTurn then
+		shownTurn = turn
+		calledPocket, dragInput, pullStart = nil, nil, nil
+		setPower(0)
+	end
 	local view = aimingView()
+	drawPockets(view, match)
 	hud.setAimEnabled(view ~= nil)
 	visuals.Parent = if view then Workspace else nil
 	if not view then
@@ -264,6 +372,12 @@ function AimController.Init()
 	cueStick = visualPart("Cue", Enum.PartType.Cylinder, 0)
 	cueStick.Material = Enum.Material.Wood
 	cueStick.Color = Color3.fromRGB(160, 110, 60)
+	for i = 1, 6 do
+		local marker = visualPart(`Pocket{i}`, Enum.PartType.Cylinder, 1)
+		local size = TableSpace.studs(0.09)
+		marker.Size = Vector3.new(TableSpace.studs(0.004), size, size)
+		pocketMarkers[i] = marker
+	end
 
 	hud = TableHud.new({
 		onPower = setPower,
@@ -280,9 +394,6 @@ function AimController.Init()
 		onLeave = function()
 			Remotes.Event("LeaveTable"):FireServer()
 		end,
-		onRerack = function()
-			Remotes.Event("Rerack"):FireServer()
-		end,
 	})
 end
 
@@ -290,7 +401,7 @@ function AimController.Start()
 	TableViewController.SeatChanged:Connect(function(tableId)
 		hud.setVisible(tableId ~= nil)
 		aim.angle, aim.power = 0, 0
-		waitingSince, pullStart, aimTouch = nil, nil, nil
+		waitingSince, pullStart, aimTouch, dragInput, calledPocket = nil, nil, nil, nil, nil
 	end)
 	TableViewController.ShotStarted:Connect(function(tableId)
 		local view = TableViewController.seatedView()
