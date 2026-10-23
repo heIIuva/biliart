@@ -64,11 +64,10 @@ function AnalyticsService.economy(
 	end)
 end
 
--- Progression milestone (levels, rebirths). TODO(verify-api): confirm LogProgressionEvent's
--- argument order in Studio (player, pathName, progressionType, level, levelName).
+-- Progression milestone (levels, rebirths).
 function AnalyticsService.progression(player: Player, path: string, level: number)
 	pcall(function()
-		(Analytics :: any):LogProgressionEvent(player, path, Enum.AnalyticsProgressionType.Complete, level)
+		Analytics:LogProgressionEvent(player, path, Enum.AnalyticsProgressionType.Complete, level)
 	end)
 end
 

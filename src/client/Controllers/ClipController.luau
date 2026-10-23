@@ -174,7 +174,7 @@ local function closeUp()
 		local title = if clipHype then ShotClassifier.byId(clipHype.titleId) else nil
 		local anti = title ~= nil and title.kind == "Anti"
 		pcall(function()
-			humanoid:PlayEmote(if anti then Clip.FailEmote else Clip.WinEmote)
+			humanoid:PlayEmoteAsync(if anti then Clip.FailEmote else Clip.WinEmote)
 		end)
 	end
 	task.delay(Clip.CinematicSeconds, function()
@@ -285,7 +285,7 @@ function ClipController.Start()
 			local title = ShotClassifier.byId(hype.titleId)
 			if humanoid and title then
 				pcall(function()
-					humanoid:PlayEmote(if title.kind == "Anti" then Clip.FailEmote else Clip.WinEmote)
+					humanoid:PlayEmoteAsync(if title.kind == "Anti" then Clip.FailEmote else Clip.WinEmote)
 				end)
 			end
 		end

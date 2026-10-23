@@ -19,6 +19,7 @@ export type Callbacks = {
 	onStart: (level: string) -> (), -- bot level, or "Casual" / "Ranked" / "Cancel"
 	onAgain: () -> (),
 	onLeave: () -> (),
+	onAd: () -> (), -- "watch an ad: x2 reward" on the result panel
 }
 
 export type PlayerLine = { name: string, groupKey: string?, active: boolean }
@@ -32,6 +33,7 @@ export type Hud = {
 	setHint: (key: string?) -> (),
 	toast: (key: string) -> (),
 	showResult: (titleKey: string?, reasonKey: string?) -> (),
+	resultAdButton: TextButton, -- hidden until an ad is available
 }
 
 local function corner(parent: GuiObject, scale: number)
@@ -219,7 +221,7 @@ function MatchHud.new(callbacks: Callbacks): Hud
 	local result = frame("Result", gui, {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(380, 260),
+		Size = UDim2.fromOffset(380, 320),
 		Visible = false,
 		Active = true,
 	})
@@ -235,6 +237,15 @@ function MatchHud.new(callbacks: Callbacks): Hud
 		Position = UDim2.new(0.5, 0, 0, 125),
 		Size = UDim2.fromOffset(280, 50),
 	}, callbacks.onAgain)
+	local adButton = button("AdButton", result, "AD_MATCH_X2", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 245),
+		Size = UDim2.fromOffset(320, 48),
+		BackgroundColor3 = Color3.fromRGB(120, 80, 20),
+		Visible = false,
+	}, function()
+		callbacks.onAd()
+	end)
 	button("ResultLeaveButton", result, "HUD_LEAVE", {
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 185),
@@ -288,7 +299,11 @@ function MatchHud.new(callbacks: Callbacks): Hud
 			toastTween = tween
 			tween:Play()
 		end,
+		resultAdButton = adButton,
 		showResult = function(titleKey: string?, reasonKey: string?)
+			if not result.Visible then
+				adButton.Visible = false
+			end
 			result.Visible = titleKey ~= nil
 			resultTitle.Text = if titleKey then Text.get(titleKey) else ""
 			resultReason.Text = if reasonKey then Text.get(reasonKey) else ""

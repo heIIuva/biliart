@@ -18,9 +18,11 @@ local AnalyticsService = require(script.Parent.AnalyticsService)
 local DataService = require(script.Parent.DataService)
 local KingTableService = require(script.Parent.KingTableService)
 local LeaderboardService = require(script.Parent.LeaderboardService)
+local ShopService = require(script.Parent.ShopService)
 
 local LOBBY_CENTER = Vector3.new(0, 0, -15)
 local TABLE_SPACING = 9
+local AUTO_COLLECT_MIN = 25 -- coins; avoids an analytics event every second
 
 local plots: { [number]: Player } = {} -- plot index -> owner
 local models: { [Player]: Model } = {}
@@ -350,6 +352,13 @@ function DojoService.Init()
 end
 
 function DojoService.Start()
+	DojoService.addMultiplierSource(ShopService.dojoMultiplier)
+	DojoService.addOfflineCapSource(function(player)
+		return if ShopService.owns(player, "VIP") then Dojo.OfflineCapHoursVip else Dojo.OfflineCapHours
+	end)
+	ShopService.onAdReward("OfflineX2", function(player)
+		DojoService.claimOffline(player, 2)
+	end)
 	DataService.Loaded:Connect(onLoaded)
 	Remotes.Event("DojoAction").OnServerEvent:Connect(onAction)
 	Players.PlayerRemoving:Connect(function(player)
@@ -374,6 +383,12 @@ function DojoService.Start()
 				if data then
 					local income = DojoService.income(player)
 					data.dojo.cash += income
+					-- Auto-collect pass: the till empties itself every few seconds.
+					if ShopService.owns(player, "AutoCollect") and data.dojo.cash >= AUTO_COLLECT_MIN then
+						local amount = math.floor(data.dojo.cash)
+						data.dojo.cash -= amount
+						DataService.addCurrency(player, "coins", amount, "Gameplay", "DojoAutoCollect")
+					end
 					Remotes.Event("DojoTick"):FireClient(player, { cash = data.dojo.cash, income = income })
 					if lastIncome[player] ~= income then
 						lastIncome[player] = income

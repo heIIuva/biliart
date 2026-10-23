@@ -60,7 +60,7 @@ local function show(message: Remotes.QuickChatMessage)
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			pcall(function()
-				humanoid:PlayEmote(entry.emote :: string)
+				humanoid:PlayEmoteAsync(entry.emote :: string)
 			end)
 		end
 	end

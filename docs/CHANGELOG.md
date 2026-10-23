@@ -89,3 +89,17 @@
   Hooks for other systems: `addMultiplierSource`, `addOfflineCapSource`.
 - Client: dojo screen (income, till, tables, decor, rebirth, go to dojo), "While you were away…"
   popup (x2 ad button wired in phase 9), idle animation of students.
+
+## Phase 9 — shop and ads
+- `Config/Monetization` (passes and products, id 0 = placeholder), `Config/Ads`, `Game/Shop` (pure, tested:
+  receipt idempotency with bounded memory, boosts extend instead of stacking).
+- `ShopService`: the only `ProcessReceipt` (routing by ProductId, PurchaseGranted only with an active
+  profile and after the change, immediate save), pass ownership cache + `PromptGamePassPurchaseFinished`,
+  gifts (offline recipients via ProfileStore messages), starter pack once, server hype (extends, x2 match
+  rewards and bigger splashes for everyone), skins. VIP: x2 match coins, 24 h offline cap; DojoX2,
+  auto-collect, Tiger table bonus; coin/dojo boosts.
+- `AdRewardService`: daily limit, context checks, never during the player's own turn; the reward is a
+  developer product receipt (channel AdReward). Client: availability checked when a panel opens, buttons
+  name the reward — x2 match reward, x2 offline income, x2 dojo income for 10 minutes.
+- Shop UI with gift target selection. APIs checked against the Roblox type definitions; deprecated
+  `Humanoid:PlayEmote` replaced by `PlayEmoteAsync`.

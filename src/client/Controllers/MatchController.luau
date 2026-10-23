@@ -13,6 +13,7 @@ local Remotes = require(Shared.Net.Remotes)
 local Tables = require(Shared.Config.Tables)
 local Text = require(Shared.Util.Text)
 local MatchHud = require(script.Parent.Parent.UI.MatchHud)
+local AdController = require(script.Parent.AdController)
 local TableViewController = require(script.Parent.TableViewController)
 
 local GROUP_KEYS = { Solids = "GROUP_SOLIDS", Stripes = "GROUP_STRIPES" }
@@ -94,7 +95,13 @@ local function render()
 
 	if phase == "Over" then
 		hud.setHint(nil)
+		local wasShown = previous ~= nil and previous.phase == "Over"
 		hud.showResult(if snapshot.winner == me then "MATCH_YOU_WIN" else "MATCH_YOU_LOSE", snapshot.reasonKey)
+		if not wasShown then
+			AdController.whenAvailable("MatchX2", hud.resultAdButton, function()
+				hud.resultAdButton.Visible = true
+			end)
+		end
 		return
 	end
 	hud.showResult(nil, nil)
@@ -138,6 +145,10 @@ function MatchController.Init()
 		end,
 		onLeave = function()
 			Remotes.Event("LeaveTable"):FireServer()
+		end,
+		onAd = function()
+			hud.resultAdButton.Visible = false
+			AdController.request("MatchX2")
 		end,
 	})
 end

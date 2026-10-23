@@ -26,6 +26,7 @@ type Profile = {
 	IsActive: (any) -> boolean,
 	OnSessionEnd: any,
 	MessageHandler: (any, (any, () -> ()) -> ()) -> (),
+	Save: (any) -> (),
 }
 
 local store = ProfileStore.New(STORE_NAME, Progression.template())
@@ -59,6 +60,14 @@ end
 -- Marks the player's data as changed: a snapshot goes to their client on the next batch.
 function DataService.changed(player: Player)
 	dirty[player] = true
+end
+
+-- Saves right away (after a purchase) instead of waiting for the autosave.
+function DataService.save(player: Player)
+	local profile = profiles[player]
+	if profile and profile:IsActive() then
+		profile:Save()
+	end
 end
 
 function DataService.notify(player: Player, key: string, values: { [string]: any }?)
@@ -107,6 +116,7 @@ end
 local function snapshot(data: Progression.PlayerData): { [string]: any }
 	local copy = table.clone(data :: any)
 	copy.purchases = nil -- receipts stay on the server
+	copy.starterPackBought = data.purchases.starterPack
 	return copy
 end
 

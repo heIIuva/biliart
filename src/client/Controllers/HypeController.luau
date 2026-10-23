@@ -18,6 +18,7 @@ local TableSpace = require(Shared.World.TableSpace)
 local Text = require(Shared.Util.Text)
 local Titles = require(Shared.Config.Titles)
 local Sfx = require(script.Parent.Parent.Util.Sfx)
+local ShopController = require(script.Parent.ShopController)
 local TableViewController = require(script.Parent.TableViewController)
 
 local Kind = PoolPhysics.EventKind
@@ -127,7 +128,8 @@ local function showSplash(hype: Remotes.HypePayload)
 		else ""
 	comboLabel.Text = if hype.combo > 1 then Text.format("HYPE_COMBO", { combo = hype.combo }) else ""
 
-	local comboScale = 1 + Hype.ComboScalePerLevel * (hype.combo - 1)
+	local hyped = os.time() < ShopController.serverHypeUntil -- server hype: bigger splashes for all
+	local comboScale = (1 + Hype.ComboScalePerLevel * (hype.combo - 1)) * (if hyped then 1.25 else 1)
 	splash.Enabled = true
 	splashScale.Scale = 0.2
 	TweenService:Create(splashScale, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
@@ -144,13 +146,15 @@ end
 
 local function showBanner(message: Remotes.Announcement)
 	local title = ShotClassifier.byId(message.titleId)
-	if not title then
+	local name
+	if message.titleId == "SERVER_HYPE" then
+		name = Text.get("TITLE_SERVER_HYPE")
+	elseif title then
+		name = `{title.hanzi} {Text.get(title.nameKey)}`
+	else
 		return
 	end
-	banner.Text = Text.format("HYPE_ANNOUNCE", {
-		player = message.playerName,
-		title = `{title.hanzi} {Text.get(title.nameKey)}`,
-	})
+	banner.Text = Text.format("HYPE_ANNOUNCE", { player = message.playerName, title = name })
 	banner.Visible = true
 	task.delay(3, function()
 		banner.Visible = false

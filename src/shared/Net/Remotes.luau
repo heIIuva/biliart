@@ -114,6 +114,10 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	DojoAction = "RemoteEvent", -- client -> server: { action = "buy" | "decor" | "rebirth" | "claimOffline" | "visit", id? }
 	DojoTick = "RemoteEvent", -- server -> client: { cash, income } every second
 	OfflineEarnings = "RemoteEvent", -- server -> client: { amount, seconds }
+	Buy = "RemoteEvent", -- client -> server: { kind = "pass" | "product", key, giftTo? }
+	ShopState = "RemoteEvent", -- server -> client: { passes = { [key]: true }, serverHypeUntil }
+	RequestAd = "RemoteEvent", -- client -> server: placement name (Config.Ads)
+	AdResult = "RemoteEvent", -- server -> client: { placement, shown: boolean }
 }
 
 local FOLDER_NAME = "Remotes"

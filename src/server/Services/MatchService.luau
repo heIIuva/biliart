@@ -37,6 +37,7 @@ local DataService = require(script.Parent.DataService)
 local HypeService = require(script.Parent.HypeService)
 local LeaderboardService = require(script.Parent.LeaderboardService)
 local QuestService = require(script.Parent.QuestService)
+local ShopService = require(script.Parent.ShopService)
 local SocialService = require(script.Parent.SocialService)
 local SpiritService = require(script.Parent.SpiritService)
 local TableService = require(script.Parent.TableService)
@@ -81,6 +82,7 @@ type Match = {
 local matches: { [string]: Match } = {}
 -- Players waiting for a human opponent, seated at their own table.
 local queued: { [Player]: { mode: Mode, entry: TableService.Entry, since: number } } = {}
+local lastMatchCoins: { [Player]: number } = {} -- for the "x2 match reward" rewarded ad
 local shotLimiter = RateLimiter.new(1, 2)
 local startLimiter = RateLimiter.new(0.5, 2)
 
@@ -179,7 +181,8 @@ local function award(match: Match, winner: number, leaver: number?)
 				coins = if won then rewards.win else rewards.loss
 				xp = if won then Economy.Xp.Win else Economy.Xp.Loss
 			end
-			coins = math.floor(coins * SocialService.rewardMultiplier(player))
+			coins = math.floor(coins * SocialService.rewardMultiplier(player) * ShopService.coinMultiplier(player))
+			lastMatchCoins[player] = coins
 			DataService.addCurrency(player, "coins", coins, "Gameplay", if won then "MatchWin" else "MatchPlayed")
 			DataService.notify(player, "NOTIFY_COINS", { amount = coins })
 			DataService.addXp(player, xp)
@@ -520,6 +523,18 @@ function MatchService.startPvp(entry: TableService.Entry, a: Player, b: Player, 
 	startMatch(entry, { humanSeat(a, base), humanSeat(b, base) }, mode, false)
 end
 
+-- The player can claim "x2 match reward" for their last finished match.
+function MatchService.lastMatchCoins(player: Player): number
+	return lastMatchCoins[player] or 0
+end
+
+-- True while it is this player's turn in a running match (ads never play then).
+function MatchService.isPlayersTurn(player: Player): boolean
+	local entry = TableService.tableOf(player)
+	local match = if entry then matches[entry.id] else nil
+	return match ~= nil and match.phase == "Playing" and match.seats[match.rules.current].player == player
+end
+
 function MatchService.isPlaying(entry: TableService.Entry): boolean
 	local match = matches[entry.id]
 	return match ~= nil and match.phase == "Playing"
@@ -640,7 +655,16 @@ function MatchService.Start()
 		broadcast(entry)
 	end)
 	TableService.Unseated:Connect(onUnseated)
+	ShopService.onAdReward("MatchX2", function(player)
+		local coins = lastMatchCoins[player]
+		if coins and coins > 0 then
+			lastMatchCoins[player] = nil
+			DataService.addCurrency(player, "coins", coins, "ContextualPurchase", "AdMatchX2")
+			DataService.notify(player, "NOTIFY_COINS", { amount = coins })
+		end
+	end)
 	Players.PlayerRemoving:Connect(function(player)
+		lastMatchCoins[player] = nil
 		shotLimiter:Forget(player)
 		startLimiter:Forget(player)
 	end)

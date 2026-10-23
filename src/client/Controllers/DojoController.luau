@@ -15,6 +15,7 @@ local Remotes = require(Shared.Net.Remotes)
 local ShotClassifier = require(Shared.Pool.ShotClassifier)
 local Text = require(Shared.Util.Text)
 local Kit = require(script.Parent.Parent.UI.Kit)
+local AdController = require(script.Parent.AdController)
 local MenuController = require(script.Parent.MenuController)
 local PlayerDataController = require(script.Parent.PlayerDataController)
 
@@ -25,10 +26,7 @@ local offline: Frame
 local offlineText: TextLabel
 local cash, income = 0, 0
 
-local DojoController = {
-	-- Phase 9 sets this to show the rewarded-ad button (x2 offline earnings) when ads are available.
-	offerDoubleAd = nil :: ((() -> ()) -> ())?,
-}
+local DojoController = {}
 
 local function row(order: number, text: string, buttonText: string?, enabled: boolean, onActivated: () -> ())
 	local f = Kit.frame(
@@ -170,6 +168,7 @@ local function buildOffline(gui: ScreenGui)
 		Visible = false,
 	}, function()
 		offline.Visible = false
+		AdController.request("OfflineX2")
 	end)
 	double.Name = "DoubleAd"
 end
@@ -208,8 +207,21 @@ function DojoController.Init()
 end
 
 function DojoController.Start()
+	local boostAd = Kit.button("BoostAd", panel, "AD_DOJO_BOOST", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -220, 0, 58),
+		Size = UDim2.fromOffset(300, 40),
+		BackgroundColor3 = Color3.fromRGB(120, 80, 20),
+		Visible = false,
+	}, function()
+		AdController.request("DojoBoost")
+	end)
 	MenuController.addButton("MENU_DOJO", 5, function()
 		panel.Visible = true
+		boostAd.Visible = false
+		AdController.whenAvailable("DojoBoost", boostAd, function()
+			boostAd.Visible = true
+		end)
 		Remotes.Event("DojoAction"):FireServer({ action = "open" })
 		render()
 	end)
@@ -223,14 +235,11 @@ function DojoController.Start()
 	Remotes.Event("OfflineEarnings").OnClientEvent:Connect(function(earned: { amount: number, seconds: number })
 		offlineText.Text = Text.format("OFFLINE_EARNED", { amount = earned.amount })
 		offline.Visible = true
-		local offer = DojoController.offerDoubleAd
 		local double = offline:FindFirstChild("DoubleAd") :: TextButton
 		double.Visible = false
-		if offer then
-			offer(function()
-				double.Visible = true
-			end)
-		end
+		AdController.whenAvailable("OfflineX2", double, function()
+			double.Visible = true
+		end)
 	end)
 	PlayerDataController.Changed:Connect(function(_data: Progression.PlayerData)
 		render()

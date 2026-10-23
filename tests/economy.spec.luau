@@ -2,6 +2,7 @@
 -- Progression and economy formulas.
 local Economy = require("../src/shared/Config/Economy")
 local Progression = require("../src/shared/Game/Progression")
+local Shop = require("../src/shared/Game/Shop")
 local Dojo = require("../src/shared/Config/Dojo")
 local DojoMath = require("../src/shared/Game/Dojo")
 local Spirits = require("../src/shared/Config/Spirits")
@@ -145,5 +146,29 @@ return {
 		assert(not DojoMath.canRebirth(data), "casual titles do not count for a ranked requirement")
 		local beyond = DojoMath.rebirthRequirement(5)
 		assert(beyond.coins > Dojo.Rebirths[#Dojo.Rebirths].coins, "keeps growing")
+	end,
+
+	["shop: receipts are idempotent and the memory is bounded"] = function()
+		local ids: { string } = {}
+		assert(not Shop.seenReceipt(ids, "a"), "new receipt")
+		Shop.rememberReceipt(ids, "a")
+		assert(Shop.seenReceipt(ids, "a"), "redelivered receipt is recognised")
+		for i = 1, 60 do
+			Shop.rememberReceipt(ids, `r{i}`)
+		end
+		assert(#ids == 50 and not Shop.seenReceipt(ids, "a") and Shop.seenReceipt(ids, "r60"), "bounded")
+	end,
+
+	["shop: boosts extend instead of stacking, products resolve, placeholder ids never match"] = function()
+		local boosts: { [string]: number } = {}
+		Shop.extendBoost(boosts, "Coins", 30, 1000)
+		assert(boosts.Coins == 1000 + 1800 and Shop.boostActive(boosts, "Coins", 2000), "active")
+		Shop.extendBoost(boosts, "Coins", 30, 2000)
+		assert(boosts.Coins == 1000 + 3600, "extended from the current end")
+		Shop.extendBoost(boosts, "Coins", 10, 10000)
+		assert(boosts.Coins == 10000 + 600, "expired boosts restart from now")
+		assert(not Shop.boostActive(boosts, "Dojo", 2000), "other kind inactive")
+		assert(Shop.productByKey("Starter") and (Shop.productByKey("Starter") :: any).once, "starter pack is one-time")
+		assert(Shop.productById(0) == nil, "id 0 is a placeholder")
 	end,
 }
