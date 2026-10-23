@@ -84,6 +84,8 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	StartTutorial = "RemoteEvent", -- client -> server: no payload
 	Announcement = "RemoteEvent", -- server -> clients: Announcement
 	Debug = "RemoteEvent", -- client -> server, Studio only: { action = "title", id = titleId }
+	ClipOpened = "RemoteEvent", -- client -> server: analytics only
+	ClipScreenshot = "RemoteEvent", -- client -> server: analytics only
 }
 
 local FOLDER_NAME = "Remotes"

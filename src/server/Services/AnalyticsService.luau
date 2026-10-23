@@ -5,6 +5,11 @@
 
 local Analytics = game:GetService("AnalyticsService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage.Shared
+local RateLimiter = require(Shared.Util.RateLimiter)
+local Remotes = require(Shared.Net.Remotes)
 
 local FUNNEL = {
 	Joined = 1,
@@ -43,6 +48,14 @@ function AnalyticsService.custom(player: Player, eventName: string, value: numbe
 end
 
 function AnalyticsService.Start()
+	local limiter = RateLimiter.new(0.5, 3)
+	for _, name in { "ClipOpened", "ClipScreenshot" } do
+		Remotes.Event(name).OnServerEvent:Connect(function(player)
+			if limiter:Allow(player) then
+				AnalyticsService.custom(player, name)
+			end
+		end)
+	end
 	Players.PlayerAdded:Connect(function(player)
 		AnalyticsService.funnel(player, FUNNEL.Joined, "Joined")
 	end)

@@ -112,4 +112,13 @@ return {
 		en = "Ball in hand: drag the cue ball anywhere",
 		ru = "Шар в руке: перетащите биток куда угодно",
 	},
+
+	CLIP_BUTTON = { en = "Clip", ru = "Клип" },
+	CLIP_REPLAY = { en = "Replay", ru = "Повтор ещё раз" },
+	CLIP_SCREENSHOT = { en = "Save screenshot", ru = "Сохранить скриншот" },
+	CLIP_CLOSE = { en = "Close", ru = "Закрыть" },
+	CLIP_HINT = {
+		en = "Record your screen and crop to the frame",
+		ru = "Запишите экран и обрежьте видео по рамке",
+	},
 } :: { [string]: { en: string, ru: string } }

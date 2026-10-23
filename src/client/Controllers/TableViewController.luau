@@ -40,6 +40,14 @@ type Playback = {
 	hype: Remotes.HypePayload?,
 }
 
+-- The last shot played at a table, kept for the replay (clip mode).
+export type LastShot = {
+	before: { PoolPhysics.BallState },
+	decoded: TrajectoryCodec.Decoded,
+	final: { PoolPhysics.BallState },
+	hype: Remotes.HypePayload?,
+}
+
 export type View = {
 	id: string,
 	geometry: TableGeometry.Geometry,
@@ -48,6 +56,7 @@ export type View = {
 	parts: { [number]: BasePart },
 	folder: Folder,
 	playback: Playback?,
+	lastShot: LastShot?,
 }
 
 local BALL_COLORS: { [number]: Color3 } = {
@@ -329,6 +338,7 @@ local function onTableState(snapshot: Remotes.TableSnapshot)
 			parts = {},
 			folder = folder,
 			playback = nil,
+			lastShot = nil,
 		}
 		views[snapshot.tableId] = view
 	end
@@ -345,7 +355,9 @@ local function onShotResult(message: Remotes.ShotResultPayload)
 		return
 	end
 	finish(view)
-	view.playback = buildPlayback(view, TrajectoryCodec.decode(message.trajectory), message.balls, message.hype)
+	local decoded = TrajectoryCodec.decode(message.trajectory)
+	view.lastShot = { before = table.clone(view.balls), decoded = decoded, final = message.balls, hype = message.hype }
+	view.playback = buildPlayback(view, decoded, message.balls, message.hype)
 	TableViewController.ShotStarted:Fire(view.id)
 end
 
@@ -371,6 +383,28 @@ function TableViewController.moveBall(view: View, id: number, x: number, y: numb
 				part.CFrame = TableSpace.ballCFrame(view.surface, x, y, R, b.qx or 0, b.qy or 0, b.qz or 0, b.qw or 1)
 			end
 		end
+	end
+end
+
+-- Plays the last shot again from its starting position (no splash). False if there is nothing
+-- to replay or a live shot is playing.
+function TableViewController.replay(view: View): boolean
+	local last = view.lastShot
+	if not last or view.playback then
+		return false
+	end
+	view.balls = table.clone(last.before)
+	applyBalls(view)
+	view.playback = buildPlayback(view, last.decoded, last.final, nil)
+	return true
+end
+
+-- Puts the camera back to the seated table view (after the clip took it over).
+function TableViewController.resetCamera()
+	local view = TableViewController.seatedView()
+	if view then
+		Workspace.CurrentCamera.CFrame = cameraTarget(view)
+		Workspace.CurrentCamera.FieldOfView = Controls.CameraFov
 	end
 end
 

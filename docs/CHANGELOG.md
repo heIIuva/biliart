@@ -50,3 +50,10 @@
   rarity, combo), camera shake, title sound stub, announcement banner.
 - Tutorial: offer on join, rigged first break (always TIGER, `Config/Tutorial`), 4 hints;
   `AnalyticsService` wrapper logs the onboarding funnel.
+
+## Phase 5 — clip mode
+- `ClipController`: "Clip" button after every shot (gold after a title); vertical 9:16 replay of
+  the last shot centered on screen with black side bars, table turned long side up, title and game
+  watermark inside the reels safe zones (top 12%, bottom 20%, right 15%, `Config/Clip`); buttons sit
+  outside the frame; replay ends on an avatar close-up with an emote; screenshot via CaptureService.
+- The avatar plays a reaction emote at the table after the player's own titled shot.
