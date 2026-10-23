@@ -577,7 +577,7 @@ function playShot(
 		turnStreak = match.turnStreak + 1,
 	})
 	local title = ShotClassifier.classify(report, LiveConfigService.get().disabledTitles)
-	if useSuper or (EventService.allTiger() and report.pottedOwn > 0) then
+	if useSuper or (EventService.allTiger() and report.potted > 0 and report.foul == "") then
 		title = ShotClassifier.byId("TIGER") -- the Tiger super shot always gets its splash
 	end
 	if match.chaos then

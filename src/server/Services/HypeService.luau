@@ -28,8 +28,19 @@ local function titleKey(id: string): string
 	return "title:" .. id
 end
 
+-- GetSortedMap throws in a place that was never published (Studio); the loop must survive that.
+local function sortedMap(): MemoryStoreSortedMap?
+	local ok, map = pcall(function()
+		return MemoryStoreService:GetSortedMap(STORE_NAME)
+	end)
+	return if ok then map else nil
+end
+
 local function flush()
-	local map = MemoryStoreService:GetSortedMap(STORE_NAME)
+	local map = sortedMap()
+	if not map then
+		return
+	end
 	for key, delta in pending do
 		pending[key] = nil
 		local ok = pcall(function()
@@ -44,7 +55,10 @@ local function flush()
 end
 
 local function refresh()
-	local map = MemoryStoreService:GetSortedMap(STORE_NAME)
+	local map = sortedMap()
+	if not map then
+		return
+	end
 	local backup = DataStoreService:GetDataStore(STORE_NAME)
 	local keys = { TOTAL_KEY }
 	for _, title in Titles do

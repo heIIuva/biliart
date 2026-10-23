@@ -13,6 +13,7 @@ local EventSchedule = require(Shared.Game.Events)
 local Events = require(Shared.Config.Events)
 local RateLimiter = require(Shared.Util.RateLimiter)
 local Remotes = require(Shared.Net.Remotes)
+local Tables = require(Shared.Config.Tables)
 local DataService = require(script.Parent.DataService)
 local LiveConfigService = require(script.Parent.LiveConfigService)
 
@@ -21,6 +22,7 @@ export type AdminEffect = "AllTiger" | "GoldenRain" | "TripleRewards"
 local LOBBY_CENTER = Vector3.new(0, 0, -15)
 local LOBBY_RADIUS = 40
 local LANTERN_LIFETIME = 20
+local TABLE_CLEARANCE = Vector2.new(9, 6) -- table half-size (7.7 x 4.4 studs) plus a margin
 
 local admin: { [string]: number } = {} -- effect -> os.time() it ends
 local adminLimiter = RateLimiter.new(1, 3)
@@ -94,11 +96,34 @@ local function broadcast(force: boolean)
 	end
 end
 
+local function onTable(position: Vector3): boolean
+	for _, placement in Tables.Placements do
+		if
+			math.abs(position.X - placement.x) < TABLE_CLEARANCE.X
+			and math.abs(position.Z - placement.z) < TABLE_CLEARANCE.Y
+		then
+			return true
+		end
+	end
+	return false
+end
+
+local function lobbySpot(): Vector3
+	local position = LOBBY_CENTER
+	for _ = 1, 10 do -- a few tries; the tables cover a small part of the lobby
+		local angle, distance = math.random() * 2 * math.pi, math.random() * LOBBY_RADIUS
+		position = LOBBY_CENTER + Vector3.new(math.cos(angle) * distance, 3, math.sin(angle) * distance)
+		if not onTable(position) then
+			break
+		end
+	end
+	return position
+end
+
 -- Lantern rain / golden rain: pickups fall in the lobby; the first player to touch one gets coins.
 local function dropLanterns(count: number, golden: boolean)
 	for _ = 1, count do
-		local angle, distance = math.random() * 2 * math.pi, math.random() * LOBBY_RADIUS
-		local position = LOBBY_CENTER + Vector3.new(math.cos(angle) * distance, 3, math.sin(angle) * distance)
+		local position = lobbySpot()
 		local lantern = Instance.new("Part")
 		lantern.Name = if golden then "GoldenBall" else "Lantern"
 		lantern.Shape = Enum.PartType.Ball
