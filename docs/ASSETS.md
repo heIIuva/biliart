@@ -17,9 +17,11 @@ Only original assets — nothing ripped from other games or videos.
 | 4 | `Sounds.SadTrombone`, `Cricket`, `Drama`, `Explosion`, `Whoosh` | Sound | Anti-title stingers (SHAME, CRICKET, RATTLE, EIGHT_DOOM, FLYAWAY). | needed |
 | 4 | `Sounds.Ann*` (AnnTiger, AnnCarp, …) | Sound | Announcer lines, one per title (own voice recordings). | needed |
 | 4 | splash art per title (`splash` key) | Image | Optional background art behind the hanzi (tiger, carp, dragon…). | later |
+| art | `BallTextures[0..15]` | Image | Ball textures `assets/balls/textures/ball_XX.png` on the template mesh `ReplicatedStorage.Assets.BallMesh` (`assets/balls/pool_ball.obj`). 0 = primitive ball. | files ready, not uploaded |
+| art | `CueTexture` | Image | Cue texture `assets/cue/cue.png` for `assets/cue/cue.obj`. | files ready, not uploaded, not wired |
 
 Temporary sounds come from the Roblox Creator Store "Pro Sound Effects" library (free to use in
 Roblox experiences). Each clip holds several hits, so only a region plays (found from the clip's
 peak envelope in Studio). Replace with own recordings when ready: set `id`, `start`, `length`, `gain`.
 
-Not needed yet: table/cue/ball models (primitives are fine until the art pass), fonts (chosen by the author later).
+Not needed yet: table model (primitives are fine until the art pass), fonts (chosen by the author later).
