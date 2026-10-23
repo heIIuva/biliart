@@ -16,20 +16,30 @@ local PoolRules = require(Shared.Pool.PoolRules)
 local Rack = require(Shared.Pool.Rack)
 local RateLimiter = require(Shared.Util.RateLimiter)
 local Remotes = require(Shared.Net.Remotes)
+local Cues = require(Shared.Config.Cues)
+local Economy = require(Shared.Config.Economy)
+local Progression = require(Shared.Game.Progression)
 local Rules = require(Shared.Config.Rules)
 local ShotClassifier = require(Shared.Pool.ShotClassifier)
 local ShotReport = require(Shared.Pool.ShotReport)
+local Titles = require(Shared.Config.Titles)
 local TitleScenarios = require(Shared.Pool.TitleScenarios)
 local TrajectoryCodec = require(Shared.Pool.TrajectoryCodec)
 local Tutorial = require(Shared.Config.Tutorial)
 local Validate = require(Shared.Util.Validate)
 local AnalyticsService = require(script.Parent.AnalyticsService)
 local BotService = require(script.Parent.BotService)
+local CueService = require(script.Parent.CueService)
+local DataService = require(script.Parent.DataService)
 local HypeService = require(script.Parent.HypeService)
+local LeaderboardService = require(script.Parent.LeaderboardService)
+local QuestService = require(script.Parent.QuestService)
+local SpiritService = require(script.Parent.SpiritService)
 local TableService = require(script.Parent.TableService)
 
 local PLAYBACK_GRACE = 0.6 -- seconds after a trajectory ends before the next turn starts
 local LATE_SHOT_GRACE = 0.5 -- accept a shot this long after the turn timer (network delay)
+local SPIN_QUEST_MIN = 0.2 -- a pot "with spin" needs at least this tip offset
 
 type Seat = {
 	player: Player?,
@@ -37,6 +47,7 @@ type Seat = {
 	name: string,
 	userId: number,
 	timeouts: number,
+	cue: Cues.Cue, -- stats used this match (base in ranked and the tutorial)
 }
 
 type Match = {
@@ -86,6 +97,7 @@ local function snapshot(entry: TableService.Entry): Remotes.MatchSnapshot
 			userId = seat.userId,
 			isBot = seat.level ~= nil,
 			group = match.rules.groups[i] :: string?,
+			aim = seat.cue.aim,
 		})
 	end
 	return {
@@ -108,7 +120,8 @@ local function broadcast(entry: TableService.Entry)
 end
 
 local function turnSeconds(seat: Seat): number
-	return math.max(Rules.MinTurnSeconds, Rules.TurnSeconds - seat.timeouts * Rules.TimeoutPenaltySeconds)
+	local base = math.max(Rules.MinTurnSeconds, Rules.TurnSeconds - seat.timeouts * Rules.TimeoutPenaltySeconds)
+	return base + seat.cue.time
 end
 
 local function findBall(balls: { PoolPhysics.BallState }, id: number): PoolPhysics.BallState?
@@ -123,12 +136,75 @@ end
 local playShot: (Match, PoolPhysics.ShotParams, number?, { x: number, y: number }?) -> ()
 local startTurn: (Match) -> ()
 
-local function finish(match: Match, winner: number, reasonKey: string)
+-- Pays and records the match for every human seat. A player who left gets the loss only.
+local function award(match: Match, winner: number, leaver: number?)
+	for index, seat in match.seats do
+		local player = seat.player
+		local data = if player then DataService.get(player) else nil
+		if not player or not data then
+			continue
+		end
+		local won = index == winner
+		if won then
+			data.stats.wins += 1
+			data.trophies += 1
+			QuestService.event(player, "wins")
+			LeaderboardService.submit("Wins", player, data.stats.wins)
+		else
+			data.stats.losses += 1
+		end
+		QuestService.event(player, "matches")
+		if index ~= leaver then
+			local level = match.seats[3 - index].level or "Medium"
+			local coins, xp = Progression.matchReward(level, won)
+			DataService.addCurrency(player, "coins", coins, "Gameplay", if won then "MatchWin" else "MatchPlayed")
+			DataService.notify(player, "NOTIFY_COINS", { amount = coins })
+			DataService.addXp(player, xp)
+			AnalyticsService.funnel(player, AnalyticsService.Funnel.MatchFinished, "MatchFinished")
+		end
+		DataService.changed(player)
+	end
+end
+
+local function finish(match: Match, winner: number, reasonKey: string, leaver: number?)
 	match.phase = "Over"
 	match.winner = winner
 	match.reasonKey = reasonKey
 	match.turn += 1
+	award(match, winner, leaver)
 	broadcast(match.entry)
+end
+
+-- Stats, XP, spirits, quests and the shot-of-the-day board for one shot of a human.
+local function progressShot(
+	player: Player,
+	shot: PoolPhysics.ShotParams,
+	report: ShotReport.Report,
+	title: Titles.Title?
+)
+	local data = DataService.get(player)
+	if not data then
+		return
+	end
+	data.stats.shots += 1
+	data.stats.pots += report.pottedOwn
+	local xp = Economy.Xp.Pot * report.pottedOwn
+	if report.pottedOwn > 0 then
+		QuestService.event(player, "pots", nil, report.pottedOwn)
+		if math.max(math.abs(shot.spinX), math.abs(shot.spinY)) >= SPIN_QUEST_MIN then
+			QuestService.event(player, "spinPots", nil, report.pottedOwn)
+		end
+	end
+	if title then
+		SpiritService.onTitle(player, title.id)
+		QuestService.event(player, "title", title.id)
+		if title.kind == "Title" then
+			xp += Economy.Xp.Title
+			LeaderboardService.submit("ShotOfDay", player, title.priority, true)
+		end
+	end
+	DataService.addXp(player, xp)
+	DataService.changed(player)
 end
 
 local function onTimeout(match: Match, turn: number)
@@ -168,6 +244,8 @@ function startTurn(match: Match)
 			variant = match.variant,
 			ballInHand = match.ballInHand,
 			kitchenOnly = match.kitchenOnly,
+			powerScale = seat.cue.power,
+			spinScale = seat.cue.spin,
 		}
 		task.spawn(BotService.takeTurn, ctx, level, function()
 			return matches[entry.id] == match and match.turn == turn and not match.busy
@@ -192,6 +270,14 @@ function playShot(
 	local entry = match.entry
 	local shooterSeat = match.seats[match.rules.current]
 	local shooter = shooterSeat.player
+	local cue = shooterSeat.cue
+	shot = {
+		angle = shot.angle,
+		power = shot.power * cue.power,
+		spinX = shot.spinX * cue.spin,
+		spinY = shot.spinY * cue.spin,
+		elevation = shot.elevation,
+	}
 	if match.tutorial and match.rules.isBreak and shooter and shot.power >= Tutorial.MinPower then
 		-- Rigged first break: whatever the newcomer does, it is a TIGER.
 		shot = table.clone(Tutorial.BreakShot)
@@ -253,6 +339,7 @@ function playShot(
 	end
 	if shooter then
 		AnalyticsService.funnel(shooter, AnalyticsService.Funnel.FirstShot, "FirstShot")
+		progressShot(shooter, shot, report, title)
 	end
 	if outcome.nextPlayer == before.current and not outcome.gameOver then
 		match.visitOwnPots += report.pottedOwn
@@ -287,10 +374,6 @@ function playShot(
 		end
 		match.busy = false
 		if outcome.gameOver then
-			local human = match.seats[1].player
-			if human then
-				AnalyticsService.funnel(human, AnalyticsService.Funnel.MatchFinished, "MatchFinished")
-			end
 			finish(match, outcome.winner :: number, outcome.reasonKey)
 		else
 			startTurn(match)
@@ -347,8 +430,22 @@ local function startMatch(player: Player, entry: TableService.Entry, level: stri
 	local match: Match = {
 		entry = entry,
 		seats = {
-			{ player = player, level = nil, name = player.DisplayName, userId = player.UserId, timeouts = 0 },
-			{ player = nil, level = level, name = `BOT_{string.upper(level)}`, userId = 0, timeouts = 0 },
+			{
+				player = player,
+				level = nil,
+				name = player.DisplayName,
+				userId = player.UserId,
+				timeouts = 0,
+				cue = CueService.stats(player, tutorial),
+			},
+			{
+				player = nil,
+				level = level,
+				name = `BOT_{string.upper(level)}`,
+				userId = 0,
+				timeouts = 0,
+				cue = CueService.stats(nil, true),
+			},
 		},
 		rules = { current = 1, groups = {}, isBreak = true },
 		variant = variant,
@@ -408,13 +505,13 @@ local function onDebug(player: Player, payload: unknown)
 	task.delay(1, playShot, match, scenario.shot, scenario.calledPocket, nil)
 end
 
-local function onUnseated(_player: Player, entry: TableService.Entry)
+local function onUnseated(player: Player, entry: TableService.Entry)
 	local match = matches[entry.id]
 	if match then
 		match.turn += 1 -- invalidates timers and a thinking bot
 		if match.phase == "Playing" and match.started then
-			-- ponytail: the loss is only announced; results are recorded with player data (phase 6).
-			finish(match, 2, "RULE_LOSS_LEFT")
+			local leaver = if match.seats[1].player == player then 1 else 2
+			finish(match, 3 - leaver, "RULE_LOSS_LEFT", leaver)
 		end
 		matches[entry.id] = nil
 	end

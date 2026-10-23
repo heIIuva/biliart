@@ -41,6 +41,37 @@ function AnalyticsService.funnel(player: Player, step: number, stepName: string)
 	end)
 end
 
+-- Currency flow (GDD 18). sourceFlow: true when the player gains currency.
+function AnalyticsService.economy(
+	player: Player,
+	sourceFlow: boolean,
+	currency: string,
+	amount: number,
+	balance: number,
+	transactionType: string,
+	sku: string?
+)
+	pcall(function()
+		Analytics:LogEconomyEvent(
+			player,
+			if sourceFlow then Enum.AnalyticsEconomyFlowType.Source else Enum.AnalyticsEconomyFlowType.Sink,
+			currency,
+			amount,
+			balance,
+			transactionType,
+			sku
+		)
+	end)
+end
+
+-- Progression milestone (levels, rebirths). TODO(verify-api): confirm LogProgressionEvent's
+-- argument order in Studio (player, pathName, progressionType, level, levelName).
+function AnalyticsService.progression(player: Player, path: string, level: number)
+	pcall(function()
+		(Analytics :: any):LogProgressionEvent(player, path, Enum.AnalyticsProgressionType.Complete, level)
+	end)
+end
+
 function AnalyticsService.custom(player: Player, eventName: string, value: number?)
 	pcall(function()
 		Analytics:LogCustomEvent(player, eventName, value or 1)

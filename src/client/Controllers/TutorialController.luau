@@ -1,7 +1,7 @@
 --!strict
 -- First-session tutorial (GDD 9.5): offers a rigged first match (the first break is a TIGER),
 -- then shows four short hints: aim, power, spin, ball in hand. Can be skipped.
--- ponytail: "already done" lives only in this session; persisted with player data in phase 6.
+-- "Done" is saved in the player data (finished or skipped).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,6 +12,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared.Net.Remotes)
 local Text = require(Shared.Util.Text)
 local MatchController = require(script.Parent.MatchController)
+local PlayerDataController = require(script.Parent.PlayerDataController)
 local TableViewController = require(script.Parent.TableViewController)
 
 local GOLD = Color3.fromRGB(240, 190, 60)
@@ -81,6 +82,7 @@ local function buildGui()
 	button(offer, "SkipButton", "TUTORIAL_SKIP", Color3.fromRGB(60, 60, 60), 0.72, function()
 		offer.Visible = false
 		step = "Done"
+		Remotes.Event("TutorialDone"):FireServer()
 	end)
 	offer.Parent = gui
 
@@ -112,6 +114,7 @@ local function update()
 	local myTurn = MatchController.canShoot()
 	if step == "Spin" and os.clock() - spinShownAt > SPIN_HINT_SECONDS then
 		step = "BallInHand"
+		Remotes.Event("TutorialDone"):FireServer() -- the newcomer has seen the essentials
 	end
 	if step == "BallInHand" then
 		local match = MatchController.current()
@@ -135,7 +138,13 @@ function TutorialController.Init()
 end
 
 function TutorialController.Start()
-	offer.Visible = true
+	local offered = false
+	PlayerDataController.Changed:Connect(function(data)
+		if not offered then
+			offered = true
+			offer.Visible = not data.tutorialDone
+		end
+	end)
 	UserInputService.InputBegan:Connect(function(input, processed)
 		local press = input.UserInputType == Enum.UserInputType.Touch
 			or input.UserInputType == Enum.UserInputType.MouseButton1
@@ -150,9 +159,10 @@ function TutorialController.Start()
 		end
 	end)
 	TableViewController.SeatChanged:Connect(function(tableId)
-		if not tableId and step ~= "Off" then
+		if not tableId and step ~= "Off" and step ~= "Done" then
 			step = "Done"
 			hint.Visible = false
+			Remotes.Event("TutorialDone"):FireServer()
 		end
 	end)
 	RunService.Heartbeat:Connect(function()

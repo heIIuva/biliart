@@ -6,6 +6,7 @@
 -- Ball in hand: press on the cue ball and drag it. Shooting the 8: tap a pocket to call it.
 -- Only the intent goes to the server.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -95,8 +96,22 @@ local function setLine(line: Part, from: Vector3, to: Vector3)
 	line.CFrame = CFrame.lookAt((from + to) / 2, to)
 end
 
+-- Aim guide length multiplier of the local player's cue in this match.
+local function aimScale(): number
+	local match = MatchController.current()
+	if match then
+		for _, p in match.players do
+			if not p.isBot and p.userId == Players.LocalPlayer.UserId then
+				return p.aim
+			end
+		end
+	end
+	return 1
+end
+
 local function drawAim(view: View, cue: PoolPhysics.BallState)
 	local R = view.geometry.ballRadius
+	local scale = aimScale()
 	local surface = view.surface
 	local prediction = AimPredictor.predict(view.geometry, view.balls, aim.angle)
 	local from = TableSpace.toWorld(surface, cue.x, cue.y, R)
@@ -106,7 +121,7 @@ local function drawAim(view: View, cue: PoolPhysics.BallState)
 	ghost.Transparency = if prediction.kind == "None" then 1 else 0.6
 	ghost.Position = contact
 
-	local targetLength = if prediction.kind == "Ball" then Controls.GuideObjectMeters else 0
+	local targetLength = if prediction.kind == "Ball" then Controls.GuideObjectMeters * scale else 0
 	local targetStartX = prediction.ghostX + prediction.targetDirX * 2 * R
 	local targetStartY = prediction.ghostY + prediction.targetDirY * 2 * R
 	setLine(
@@ -124,8 +139,8 @@ local function drawAim(view: View, cue: PoolPhysics.BallState)
 		contact,
 		TableSpace.toWorld(
 			surface,
-			prediction.ghostX + prediction.cueDirX * Controls.GuideCueMeters,
-			prediction.ghostY + prediction.cueDirY * Controls.GuideCueMeters,
+			prediction.ghostX + prediction.cueDirX * Controls.GuideCueMeters * scale,
+			prediction.ghostY + prediction.cueDirY * Controls.GuideCueMeters * scale,
 			R
 		)
 	)

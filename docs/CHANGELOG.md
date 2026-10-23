@@ -57,3 +57,14 @@
   watermark inside the reels safe zones (top 12%, bottom 20%, right 15%, `Config/Clip`); buttons sit
   outside the frame; replay ends on an avatar close-up with an emote; screenshot via CaptureService.
 - The avatar plays a reaction emote at the table after the player's own titled shot.
+
+## Phase 6 — data and progression
+- `DataService` on ProfileStore 1.0.3 (vendored in `src/server/Packages`, Apache-2.0): session lock,
+  reconcile + `Progression.migrate`, batched snapshots to the client, currency/XP with analytics.
+- `Game/Progression` (pure, tested): schema v1, levels, 7-day daily streak, spirit levels, quest picks
+  and progress, match rewards. Configs: `Economy`, `Spirits`, `Cues`, `Quests`.
+- `SpiritService` (unlock by title, levels, equip), `QuestService` (daily reward, daily/weekly quests),
+  `CueService` (buy/equip; stats in casual matches, base cue in the tutorial), `LeaderboardService`
+  (wins, shot of the day, boards in the lobby). Matches pay fixed coins/XP; leaving records a loss only.
+- Client: currency bar, spirit index (silhouettes, "???" for secrets), daily, quests, cues menus,
+  toasts, leaderboard boards; tutorial is offered only until done; aim guide length follows the cue.

@@ -55,6 +55,7 @@ export type MatchPlayer = {
 	userId: number, -- 0 for bots
 	isBot: boolean,
 	group: string?, -- "Solids" | "Stripes", nil while the table is open
+	aim: number, -- aim guide length multiplier of the player's cue
 }
 
 -- Server -> clients: the match at a table. Sent at the start of every turn (after the previous
@@ -73,6 +74,14 @@ export type MatchSnapshot = {
 	winner: number?,
 }
 
+-- Server -> client toast: a localization key and values for its {placeholders}.
+export type Notification = {
+	key: string,
+	values: { [string]: any }?, -- string values that are localization keys are localized too
+}
+
+export type LeaderboardRow = { rank: number, name: string, score: number }
+
 local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	Shot = "RemoteEvent", -- client -> server: ShotParams (+ calledPocket, cueBallPos); shooter's turn only
 	ShotResult = "RemoteEvent", -- server -> clients: ShotResultPayload
@@ -86,6 +95,16 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	Debug = "RemoteEvent", -- client -> server, Studio only: { action = "title", id = titleId }
 	ClipOpened = "RemoteEvent", -- client -> server: analytics only
 	ClipScreenshot = "RemoteEvent", -- client -> server: analytics only
+
+	PlayerData = "RemoteEvent", -- server -> client: PlayerData snapshot (no purchase receipts)
+	Notify = "RemoteEvent", -- server -> client: Notification (toast)
+	ClaimDaily = "RemoteEvent", -- client -> server: no payload
+	ClaimQuest = "RemoteEvent", -- client -> server: quest id
+	BuyCue = "RemoteEvent", -- client -> server: cue id
+	EquipCue = "RemoteEvent", -- client -> server: cue id
+	EquipSpirit = "RemoteEvent", -- client -> server: spirit id
+	TutorialDone = "RemoteEvent", -- client -> server: no payload
+	Leaderboards = "RemoteEvent", -- server -> clients: { [boardId]: { LeaderboardRow } }
 }
 
 local FOLDER_NAME = "Remotes"
