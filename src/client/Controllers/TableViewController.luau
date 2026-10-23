@@ -11,6 +11,7 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Assets = require(Shared.Config.Assets)
 local Controls = require(Shared.Config.Controls)
 local PoolPhysics = require(Shared.Pool.PoolPhysics)
 local Remotes = require(Shared.Net.Remotes)
@@ -89,8 +90,8 @@ local function attach(ball: BasePart, child: BasePart, offset: CFrame)
 	child.Parent = ball
 end
 
--- A ball with a visible mark (stripe band or spot) so rolling and spin read on screen.
-local function makeBall(id: number, diameter: number): BasePart
+-- Fallback ball with a visible mark (stripe band or spot) so rolling and spin read on screen.
+local function makePrimitiveBall(id: number, diameter: number): BasePart
 	local stripe = id >= 9
 	local ball = Instance.new("Part")
 	ball.Name = `Ball{id}`
@@ -115,6 +116,38 @@ local function makeBall(id: number, diameter: number): BasePart
 		spot.Color = if id == 0 then CUE_SPOT else WHITE
 		attach(ball, spot, CFrame.new(0, diameter * 0.4, 0))
 	end
+	return ball
+end
+
+-- MeshId cannot be set at runtime, so every textured ball is a clone of one template mesh
+-- (ReplicatedStorage.Assets.BallMesh, imported from assets/balls/pool_ball.obj in Studio).
+local function findBallTemplate(): MeshPart?
+	local folder = ReplicatedStorage:FindFirstChild("Assets")
+	local template = folder and folder:FindFirstChild("BallMesh")
+	return if template and template:IsA("MeshPart") then template else nil
+end
+
+local ballTemplate = findBallTemplate()
+
+-- Textured mesh ball. Mesh pole is local X, number discs at local +Y/-Y, glyph "up" = local -Z,
+-- so with identity rotation the number faces the top-down table camera upright.
+local function makeBall(id: number, diameter: number): BasePart
+	local texture = Assets.BallTextures[id]
+	if not ballTemplate or not texture or texture == 0 then
+		return makePrimitiveBall(id, diameter)
+	end
+	local ball = ballTemplate:Clone()
+	ball.Name = `Ball{id}`
+	ball.Size = Vector3.one * diameter
+	ball.TextureID = `rbxassetid://{texture}`
+	ball.Color = Color3.new(1, 1, 1)
+	ball.Material = Enum.Material.SmoothPlastic
+	ball.Reflectance = 0.05
+	ball.Anchored = true
+	ball.CanCollide = false
+	ball.CanQuery = false
+	ball.CanTouch = false
+	ball.CastShadow = true
 	return ball
 end
 
