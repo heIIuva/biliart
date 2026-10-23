@@ -21,6 +21,8 @@ export type Context = {
 	variant: Rules.Variant,
 	ballInHand: boolean,
 	kitchenOnly: boolean,
+	powerScale: number?, -- the bot's cue: the server scales power/spin the same way when it shoots
+	spinScale: number?,
 }
 
 export type Plan = {
@@ -249,7 +251,18 @@ function BotPlanner.plan(ctx: Context, levelName: string, random: () -> number, 
 		for _, power in powers do
 			for _, spinY in spins do
 				local shot = { angle = candidate.angle, power = power, spinX = 0, spinY = spinY, elevation = 0 }
-				local sim = PoolPhysics.simulateShot({ geometry = geometry, balls = balls }, shot, { record = false })
+				local executed = {
+					angle = shot.angle,
+					power = power * (ctx.powerScale or 1),
+					spinX = 0,
+					spinY = spinY * (ctx.spinScale or 1),
+					elevation = 0,
+				}
+				local sim = PoolPhysics.simulateShot(
+					{ geometry = geometry, balls = balls },
+					executed,
+					{ record = false }
+				)
 				local outcome = PoolRules.evaluate(ctx.rules, ctx.variant, sim, { calledPocket = calledPocket })
 				local value = score(ctx, outcome, sim)
 				if not best or value > best.score then

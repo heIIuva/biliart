@@ -12,6 +12,11 @@ Only original assets — nothing ripped from other games or videos.
 | 2 | `Sounds.JawHit` | Sound | Ball knocking the pocket jaw (rattle): harder, wooden. | temp: Pro Sound Effects 9113440927 · 0.17–0.4 s |
 | 2 | `Sounds.Pocket` | Sound | Ball dropping into the pocket and rolling in the gully. | temp: Pro Sound Effects 9113442190 · 0.65–1.5 s |
 | 2 | `Sounds.Land` | Sound | Jumped ball landing on the cloth: soft thump. | temp: Pro Sound Effects 9113441345 · 0.23–0.5 s |
+| 4 | `Sounds.TigerRoar` | Sound | Tiger roar for the TIGER splash (short, punchy). | needed |
+| 4 | `Sounds.TitleRare` / `TitleEpic` / `TitleLegendary` | Sound | Gong / fanfare stingers by rarity tier. | needed |
+| 4 | `Sounds.SadTrombone`, `Cricket`, `Drama`, `Explosion`, `Whoosh` | Sound | Anti-title stingers (SHAME, CRICKET, RATTLE, EIGHT_DOOM, FLYAWAY). | needed |
+| 4 | `Sounds.Ann*` (AnnTiger, AnnCarp, …) | Sound | Announcer lines, one per title (own voice recordings). | needed |
+| 4 | splash art per title (`splash` key) | Image | Optional background art behind the hanzi (tiger, carp, dragon…). | later |
 | art | `BallTextures[0..15]` | Image | Ball textures `assets/balls/textures/ball_XX.png` on the template mesh `ReplicatedStorage.Assets.BallMesh` (`assets/balls/pool_ball.obj`). 0 = primitive ball. | files ready, not uploaded |
 | art | `CueTexture` | Image | Cue texture `assets/cue/cue.png` for `assets/cue/cue.obj`. | files ready, not uploaded, not wired |
 

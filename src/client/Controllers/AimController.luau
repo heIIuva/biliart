@@ -6,6 +6,7 @@
 -- Ball in hand: press on the cue ball and drag it. Shooting the 8: tap a pocket to call it.
 -- Only the intent goes to the server.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -21,6 +22,7 @@ local Remotes = require(Shared.Net.Remotes)
 local TableSpace = require(Shared.World.TableSpace)
 local TableHud = require(script.Parent.Parent.UI.TableHud)
 local MatchController = require(script.Parent.MatchController)
+local SpeedController = require(script.Parent.SpeedController)
 local TableViewController = require(script.Parent.TableViewController)
 
 type View = TableViewController.View
@@ -38,6 +40,7 @@ local waitingSince: number? = nil -- shot sent, result not arrived yet
 local aimTouch: InputObject? = nil
 local pullStart: { x: number, y: number }? = nil
 local dragInput: InputObject? = nil -- touch or mouse press moving the cue ball (ball in hand)
+local dragId = 0 -- ball being dragged (sandbox: any ball)
 local calledPocket: number? = nil
 local shownTurn = 0 -- turnEndsAt of the turn the aim state belongs to
 local hud: TableHud.Hud
@@ -50,8 +53,13 @@ local cueStick: Part
 local pocketMarkers: { Part } = {}
 
 local function cueBall(view: View): PoolPhysics.BallState?
+	local id = SpeedController.myCueId()
+	local match = MatchController.current()
+	if not match or match.mode ~= "Speed" then
+		id = 0
+	end
 	for _, b in view.balls do
-		if b.id == 0 and b.status == "Stationary" then
+		if b.id == id and b.status == "Stationary" then
 			return b
 		end
 	end
@@ -95,10 +103,24 @@ local function setLine(line: Part, from: Vector3, to: Vector3)
 	line.CFrame = CFrame.lookAt((from + to) / 2, to)
 end
 
+-- Aim guide length multiplier of the local player's cue in this match.
+local function aimScale(): number
+	local match = MatchController.current()
+	if match then
+		for _, p in match.players do
+			if not p.isBot and p.userId == Players.LocalPlayer.UserId then
+				return p.aim
+			end
+		end
+	end
+	return 1
+end
+
 local function drawAim(view: View, cue: PoolPhysics.BallState)
 	local R = view.geometry.ballRadius
+	local scale = aimScale()
 	local surface = view.surface
-	local prediction = AimPredictor.predict(view.geometry, view.balls, aim.angle)
+	local prediction = AimPredictor.predict(view.geometry, view.balls, aim.angle, cue.id)
 	local from = TableSpace.toWorld(surface, cue.x, cue.y, R)
 	local contact = TableSpace.toWorld(surface, prediction.ghostX, prediction.ghostY, R)
 
@@ -106,7 +128,7 @@ local function drawAim(view: View, cue: PoolPhysics.BallState)
 	ghost.Transparency = if prediction.kind == "None" then 1 else 0.6
 	ghost.Position = contact
 
-	local targetLength = if prediction.kind == "Ball" then Controls.GuideObjectMeters else 0
+	local targetLength = if prediction.kind == "Ball" then Controls.GuideObjectMeters * scale else 0
 	local targetStartX = prediction.ghostX + prediction.targetDirX * 2 * R
 	local targetStartY = prediction.ghostY + prediction.targetDirY * 2 * R
 	setLine(
@@ -124,8 +146,8 @@ local function drawAim(view: View, cue: PoolPhysics.BallState)
 		contact,
 		TableSpace.toWorld(
 			surface,
-			prediction.ghostX + prediction.cueDirX * Controls.GuideCueMeters,
-			prediction.ghostY + prediction.cueDirY * Controls.GuideCueMeters,
+			prediction.ghostX + prediction.cueDirX * Controls.GuideCueMeters * scale,
+			prediction.ghostY + prediction.cueDirY * Controls.GuideCueMeters * scale,
 			R
 		)
 	)
@@ -194,19 +216,37 @@ local function shoot(power: number)
 		elevation = aim.elevation,
 		calledPocket = if match.mustCall then calledPocket else nil,
 		cueBallPos = if match.ballInHand then { x = cue.x, y = cue.y } else nil,
+		superShot = MatchController.superShot(),
 	})
-	waitingSince = os.clock()
+	MatchController.shotSent()
+	if match.mode ~= "Speed" then
+		waitingSince = os.clock() -- speed pool: no turns, the cue ball's motion is the lock
+	end
 	aim.spinX, aim.spinY, aim.elevation = 0, 0, 0
 	hud.setSpin(0, 0)
 	hud.setElevation(0)
 end
 
--- Ball in hand: move the cue ball to a legal spot under the pointer (keeps the last legal one).
+-- Ball in hand / sandbox: move the ball to a legal spot under the pointer (keeps the last legal one).
 local function dragCue(view: View, screen: Vector3)
 	local match = MatchController.current()
 	local x, y = tablePoint(view, screen)
-	if match and x and y and PoolRules.canPlaceCue(view.geometry, view.balls, x, y, match.kitchenOnly) then
+	if not match or not x or not y then
+		return
+	end
+	if dragId == 0 and PoolRules.canPlaceCue(view.geometry, view.balls, x, y, match.kitchenOnly) then
 		TableViewController.moveBall(view, 0, x, y)
+	elseif dragId ~= 0 then
+		local R = view.geometry.ballRadius
+		local ok = math.abs(x) <= view.geometry.halfLength - R and math.abs(y) <= view.geometry.halfWidth - R
+		for _, b in view.balls do
+			if ok and b.id ~= dragId and b.status == "Stationary" and (b.x - x) ^ 2 + (b.y - y) ^ 2 < (2 * R) ^ 2 then
+				ok = false
+			end
+		end
+		if ok then
+			TableViewController.moveBall(view, dragId, x, y)
+		end
 	end
 end
 
@@ -225,10 +265,19 @@ local function pressSpecial(view: View, input: InputObject): boolean
 			end
 		end
 	end
-	local cue = cueBall(view)
 	local grab = if input.UserInputType == Enum.UserInputType.Touch then GRAB_RADIUS_TOUCH else GRAB_RADIUS_MOUSE
+	if match.mode == "Sandbox" then
+		for _, b in view.balls do
+			if b.status == "Stationary" and (b.x - x) ^ 2 + (b.y - y) ^ 2 < grab ^ 2 then
+				dragInput, dragId = input, b.id
+				return true
+			end
+		end
+		return false
+	end
+	local cue = cueBall(view)
 	if match.ballInHand and cue and (cue.x - x) ^ 2 + (cue.y - y) ^ 2 < grab ^ 2 then
-		dragInput = input
+		dragInput, dragId = input, 0
 		return true
 	end
 	return false
@@ -306,6 +355,15 @@ local function onInputEnded(input: InputObject)
 		)
 	then
 		dragInput = nil
+		local match = MatchController.current()
+		local view = TableViewController.seatedView()
+		if match and view and match.mode == "Sandbox" then
+			for _, b in view.balls do
+				if b.id == dragId then
+					Remotes.Event("Sandbox"):FireServer({ action = "place", id = dragId, x = b.x, y = b.y })
+				end
+			end
+		end
 	elseif input == aimTouch then
 		aimTouch = nil
 	elseif input.UserInputType == Enum.UserInputType.MouseButton1 and pullStart then

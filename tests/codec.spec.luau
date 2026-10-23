@@ -60,4 +60,16 @@ return {
 			)
 		)
 	end,
+
+	["live frame round trip"] = function()
+		local data = { 0, 0.5, -0.25, 0.028575, 0, 0, 0, 1, 16, -1.0, 0.3, 0.1, 0.5, 0.5, 0.5, 0.5 }
+		local frame = TrajectoryCodec.decodeFrame(TrajectoryCodec.encodeFrame(12.5, data))
+		assert(math.abs(frame.t - 12.5) < 1e-6 and #frame.data == #data, "header")
+		for i = 1, #data, STRIDE do
+			assert(frame.data[i] == data[i], "id")
+			for j = 1, 3 do
+				assert(math.abs(frame.data[i + j] - data[i + j]) <= POSITION_TOLERANCE, "position")
+			end
+		end
+	end,
 }

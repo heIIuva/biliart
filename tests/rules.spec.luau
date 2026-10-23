@@ -28,7 +28,16 @@ local function sim(events: { { number } }, gone: { number }?): PoolPhysics.SimRe
 			finalState[e[2] + 1].status = "OffTable"
 		end
 	end
-	return { finalState = finalState, events = list, frames = {}, recordHz = 60, duration = 1 }
+	return {
+		finalState = finalState,
+		events = list,
+		frames = {},
+		recordHz = 60,
+		duration = 1,
+		travel = {},
+		cueCurve = 0,
+		cueJumps = {},
+	}
 end
 
 local function state(groups: { [number]: PoolRules.Group }?, isBreak: boolean?): PoolRules.RulesState

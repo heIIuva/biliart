@@ -25,11 +25,12 @@ local CLOTH_COLORS: { [TableGeometry.Variant]: Color3 } = {
 }
 local WOOD_COLOR = Color3.fromRGB(70, 38, 20)
 local HOLE_COLOR = Color3.fromRGB(10, 10, 10)
+local KING_WOOD_COLOR = Color3.fromRGB(190, 140, 40) -- gilded frame of the Tiger (King) table
 
 export type Built = {
 	model: Model,
 	surface: CFrame, -- center of the cloth surface, see World/TableSpace
-	seat: CFrame, -- HumanoidRootPart placement for a seated player
+	seats: { CFrame }, -- HumanoidRootPart placement: [1] head end, [2] foot end
 }
 
 local function part(
@@ -54,12 +55,13 @@ end
 local TableBuilder = {}
 
 -- `origin` is the floor point under the table center; the table's long side follows origin.XVector.
-function TableBuilder.build(id: string, variant: TableGeometry.Variant, origin: CFrame): Built
+function TableBuilder.build(id: string, variant: TableGeometry.Variant, origin: CFrame, king: boolean?): Built
 	local geometry = TableGeometry.get(variant)
 	local s = TableSpace.studs
 	local hl, hw = geometry.halfLength, geometry.halfWidth
 	local surface = origin * CFrame.new(0, Tables.SurfaceHeight, 0)
 	local clothColor = CLOTH_COLORS[variant]
+	local woodColor = if king then KING_WOOD_COLOR else WOOD_COLOR
 	local cushionColor = clothColor:Lerp(Color3.new(0, 0, 0), 0.25)
 
 	local model = Instance.new("Model")
@@ -67,6 +69,7 @@ function TableBuilder.build(id: string, variant: TableGeometry.Variant, origin: 
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 	model:SetAttribute("TableId", id)
 	model:SetAttribute("Variant", variant)
+	model:SetAttribute("King", king == true)
 
 	local innerL, innerW = 2 * (hl + CUSHION_WIDTH), 2 * (hw + CUSHION_WIDTH)
 	local cloth = part(
@@ -119,7 +122,7 @@ function TableBuilder.build(id: string, variant: TableGeometry.Variant, origin: 
 			"FrameLong",
 			Vector3.new(s(outerL), s(frameHeight), s(FRAME_WIDTH)),
 			surface * CFrame.new(0, s(frameY), -sign * s(hw + CUSHION_WIDTH + FRAME_WIDTH / 2)),
-			WOOD_COLOR,
+			woodColor,
 			Enum.Material.Wood,
 			model
 		)
@@ -127,7 +130,7 @@ function TableBuilder.build(id: string, variant: TableGeometry.Variant, origin: 
 			"FrameShort",
 			Vector3.new(s(FRAME_WIDTH), s(frameHeight), s(innerW)),
 			surface * CFrame.new(sign * s(hl + CUSHION_WIDTH + FRAME_WIDTH / 2), s(frameY), 0),
-			WOOD_COLOR,
+			woodColor,
 			Enum.Material.Wood,
 			model
 		)
@@ -138,7 +141,7 @@ function TableBuilder.build(id: string, variant: TableGeometry.Variant, origin: 
 		"Apron",
 		Vector3.new(s(outerL), s(APRON_DEPTH), s(outerW)),
 		surface * CFrame.new(0, s(apronTop - APRON_DEPTH / 2), 0),
-		WOOD_COLOR,
+		woodColor,
 		Enum.Material.Wood,
 		model
 	)
@@ -149,7 +152,7 @@ function TableBuilder.build(id: string, variant: TableGeometry.Variant, origin: 
 				"Leg",
 				Vector3.new(s(LEG_SIZE), legHeight, s(LEG_SIZE)),
 				origin * CFrame.new(sx * s(hl), legHeight / 2, sz * s(hw)),
-				WOOD_COLOR,
+				woodColor,
 				Enum.Material.Wood,
 				model
 			)
@@ -163,18 +166,21 @@ function TableBuilder.build(id: string, variant: TableGeometry.Variant, origin: 
 	promptAttachment.Parent = cloth
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "PlayPrompt"
-	prompt:SetAttribute("ActionKey", "PROMPT_PLAY") -- localized on the client
+	prompt:SetAttribute("ActionKey", if king then "PROMPT_KING" else "PROMPT_PLAY") -- localized on the client
 	prompt:SetAttribute("ObjectKey", "PROMPT_TABLE")
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 10
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = promptAttachment
 
-	local seatPosition = TableSpace.toWorld(surface, -(hl + CUSHION_WIDTH + FRAME_WIDTH + 0.35), 0, 0)
-	seatPosition = Vector3.new(seatPosition.X, origin.Y + 3, seatPosition.Z)
-	local seat = CFrame.lookAt(seatPosition, seatPosition + surface.XVector)
+	local seats = {}
+	for _, side in { -1, 1 } do
+		local position = TableSpace.toWorld(surface, side * (hl + CUSHION_WIDTH + FRAME_WIDTH + 0.35), 0, 0)
+		position = Vector3.new(position.X, origin.Y + 3, position.Z)
+		table.insert(seats, CFrame.lookAt(position, position - side * surface.XVector))
+	end
 
-	return { model = model, surface = surface, seat = seat }
+	return { model = model, surface = surface, seats = seats }
 end
 
 return TableBuilder

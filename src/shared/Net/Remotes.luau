@@ -27,11 +27,27 @@ export type TableSnapshot = {
 	balls: { PoolPhysics.BallState },
 }
 
+-- The title a shot earned, for the splash.
+export type HypePayload = {
+	titleId: string,
+	combo: number, -- titles in a row this visit (1 = first)
+	rarity: number?, -- percent of all shots, nil while there is too little data
+	playerName: string,
+}
+
 -- Server -> clients after a shot: play `trajectory` (TrajectoryCodec), then snap to `balls`.
 export type ShotResultPayload = {
 	tableId: string,
 	trajectory: buffer,
 	balls: { PoolPhysics.BallState },
+	hype: HypePayload?,
+}
+
+-- Server -> clients: a rare title somewhere on this server (or another one).
+export type Announcement = {
+	playerName: string,
+	titleId: string,
+	crossServer: boolean,
 }
 
 export type MatchPlayer = {
@@ -39,13 +55,15 @@ export type MatchPlayer = {
 	userId: number, -- 0 for bots
 	isBot: boolean,
 	group: string?, -- "Solids" | "Stripes", nil while the table is open
+	aim: number, -- aim guide length multiplier of the player's cue
 }
 
 -- Server -> clients: the match at a table. Sent at the start of every turn (after the previous
 -- shot has played back) and when the match starts or ends.
 export type MatchSnapshot = {
 	tableId: string,
-	phase: "Idle" | "Playing" | "Over",
+	phase: "Idle" | "Queue" | "Playing" | "Over", -- Queue: waiting for a human opponent
+	mode: string?, -- "Bot" | "Casual" | "Ranked" | "King"
 	players: { MatchPlayer },
 	current: number, -- index into players
 	isBreak: boolean,
@@ -55,16 +73,66 @@ export type MatchSnapshot = {
 	turnEndsAt: number, -- workspace:GetServerTimeNow() when the turn times out
 	reasonKey: string?, -- outcome of the previous shot (localization key)
 	winner: number?,
+	chaos: {
+		golden: { number },
+		meter: { number }, -- by player index, 0..1
+		armed: { boolean }, -- Tiger super shot ready
+		fog: boolean, -- the current shooter plays in fog
+		note: string?, -- bonus just handed out (localization key)
+	}?,
+	trick: { id: string, nameKey: string, target: number }?,
 }
 
-local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
+-- Server -> client toast: a localization key and values for its {placeholders}.
+export type Notification = {
+	key: string,
+	values: { [string]: any }?, -- string values that are localization keys are localized too
+}
+
+export type LeaderboardRow = { rank: number, name: string, score: number }
+
+export type QuickChatMessage = { userId: number, id: string }
+
+local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" | "UnreliableRemoteEvent" } = {
 	Shot = "RemoteEvent", -- client -> server: ShotParams (+ calledPocket, cueBallPos); shooter's turn only
 	ShotResult = "RemoteEvent", -- server -> clients: ShotResultPayload
 	TableState = "RemoteEvent", -- server -> clients: TableSnapshot (on join, on a new rack)
 	MatchState = "RemoteEvent", -- server -> clients: MatchSnapshot
 	SeatChanged = "RemoteEvent", -- server -> client: tableId or nil
 	LeaveTable = "RemoteEvent", -- client -> server: no payload
-	StartMatch = "RemoteEvent", -- client -> server: bot level "Easy" | "Medium" | "Hard"
+	StartMatch = "RemoteEvent", -- client -> server: bot level "Easy" | "Medium" | "Hard", or "Casual" | "Ranked"
+	StartTutorial = "RemoteEvent", -- client -> server: no payload
+	Announcement = "RemoteEvent", -- server -> clients: Announcement
+	Debug = "RemoteEvent", -- client -> server, Studio only: { action = "title", id = titleId }
+	ClipOpened = "RemoteEvent", -- client -> server: analytics only
+	ClipScreenshot = "RemoteEvent", -- client -> server: analytics only
+
+	PlayerData = "RemoteEvent", -- server -> client: PlayerData snapshot (no purchase receipts)
+	Notify = "RemoteEvent", -- server -> client: Notification (toast)
+	ClaimDaily = "RemoteEvent", -- client -> server: no payload
+	ClaimQuest = "RemoteEvent", -- client -> server: quest id
+	BuyCue = "RemoteEvent", -- client -> server: cue id
+	EquipCue = "RemoteEvent", -- client -> server: cue id
+	EquipSpirit = "RemoteEvent", -- client -> server: spirit id
+	TutorialDone = "RemoteEvent", -- client -> server: no payload
+	Leaderboards = "RemoteEvent", -- server -> clients: { [boardId]: { LeaderboardRow } }
+	RedeemCode = "RemoteEvent", -- client -> server: code text (never shown to anyone)
+	QuickChat = "RemoteEvent", -- client -> server: phrase or emote id
+	QuickChatShown = "RemoteEvent", -- server -> clients: QuickChatMessage
+	DojoAction = "RemoteEvent", -- client -> server: { action = "buy" | "decor" | "rebirth" | "claimOffline" | "visit", id? }
+	DojoTick = "RemoteEvent", -- server -> client: { cash, income } every second
+	OfflineEarnings = "RemoteEvent", -- server -> client: { amount, seconds }
+	Buy = "RemoteEvent", -- client -> server: { kind = "pass" | "product", key, giftTo? }
+	ShopState = "RemoteEvent", -- server -> client: { passes = { [key]: true }, serverHypeUntil }
+	RequestAd = "RemoteEvent", -- client -> server: placement name (Config.Ads)
+	AdResult = "RemoteEvent", -- server -> client: { placement, shown: boolean }
+	Sandbox = "RemoteEvent", -- client -> server: { action = "place", id, x, y } | { action = "rerack" | "clear" }
+	SpeedState = "UnreliableRemoteEvent", -- server -> clients, ~20 Hz: tableId, live frame buffer, scores
+	SpeedEvents = "RemoteEvent", -- server -> clients: tableId, { Event } (sounds, pots)
+	EventState = "RemoteEvent", -- server -> clients: { mini?, nextMini, weekly, holiday?, admin }
+	AdminCommand = "RemoteEvent", -- client -> server, admins only: { effect, minutes }
+	LiveConfig = "RemoteEvent", -- server -> clients: { titleNames, flags, news? }
+	SetSettings = "RemoteEvent", -- client -> server: { music?, sfx?, announcer?, quality? }
 }
 
 local FOLDER_NAME = "Remotes"
@@ -90,6 +158,10 @@ end
 
 function Remotes.Event(name: string): RemoteEvent
 	return get(name) :: RemoteEvent
+end
+
+function Remotes.Unreliable(name: string): UnreliableRemoteEvent
+	return get(name) :: UnreliableRemoteEvent
 end
 
 function Remotes.Function(name: string): RemoteFunction

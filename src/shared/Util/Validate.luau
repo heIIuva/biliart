@@ -72,4 +72,31 @@ function Validate.botLevel(value: unknown): string?
 	return nil
 end
 
+export type Settings = { music: number, sfx: number, announcer: number, quality: string }
+
+-- New settings from a client payload: volumes 0..1, quality Auto | Low | High; other fields kept.
+function Validate.settings(current: Settings, value: unknown): Settings?
+	if type(value) ~= "table" then
+		return nil
+	end
+	local raw = value :: { [unknown]: unknown }
+	local result = table.clone(current)
+	for _, key in { "music", "sfx", "announcer" } do
+		if raw[key] ~= nil then
+			local n = Validate.finite(raw[key])
+			if not n then
+				return nil
+			end
+			(result :: any)[key] = math.clamp(n, 0, 1)
+		end
+	end
+	if raw.quality ~= nil then
+		if raw.quality ~= "Auto" and raw.quality ~= "Low" and raw.quality ~= "High" then
+			return nil
+		end
+		result.quality = raw.quality :: string
+	end
+	return result
+end
+
 return Validate

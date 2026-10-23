@@ -121,4 +121,50 @@ function TrajectoryCodec.decode(b: buffer): Decoded
 	return { recordHz = recordHz, frames = frames, events = events }
 end
 
+-- One live frame (speed pool): f32 time, u8 count, then per ball the same 13 bytes as above.
+function TrajectoryCodec.encodeFrame(t: number, data: { number }): buffer
+	local count = #data // STRIDE
+	local b = buffer.create(5 + count * BALL_BYTES)
+	buffer.writef32(b, 0, t)
+	buffer.writeu8(b, 4, count)
+	local offset = 5
+	for i = 1, #data, STRIDE do
+		local qx, qy, qz, qw = data[i + 4], data[i + 5], data[i + 6], data[i + 7]
+		if qw < 0 then
+			qx, qy, qz = -qx, -qy, -qz
+		end
+		buffer.writeu8(b, offset, data[i])
+		buffer.writei16(b, offset + 1, toI16(data[i + 1], POSITION_SCALE))
+		buffer.writei16(b, offset + 3, toI16(data[i + 2], POSITION_SCALE))
+		buffer.writei16(b, offset + 5, toI16(data[i + 3], POSITION_SCALE))
+		buffer.writei16(b, offset + 7, toI16(qx, QUAT_SCALE))
+		buffer.writei16(b, offset + 9, toI16(qy, QUAT_SCALE))
+		buffer.writei16(b, offset + 11, toI16(qz, QUAT_SCALE))
+		offset += BALL_BYTES
+	end
+	return b
+end
+
+function TrajectoryCodec.decodeFrame(b: buffer): PoolPhysics.Frame
+	local count = buffer.readu8(b, 4)
+	local data = table.create(count * STRIDE)
+	local offset = 5
+	for i = 0, count - 1 do
+		local base = i * STRIDE
+		local qx = buffer.readi16(b, offset + 7) / QUAT_SCALE
+		local qy = buffer.readi16(b, offset + 9) / QUAT_SCALE
+		local qz = buffer.readi16(b, offset + 11) / QUAT_SCALE
+		data[base + 1] = buffer.readu8(b, offset)
+		data[base + 2] = buffer.readi16(b, offset + 1) / POSITION_SCALE
+		data[base + 3] = buffer.readi16(b, offset + 3) / POSITION_SCALE
+		data[base + 4] = buffer.readi16(b, offset + 5) / POSITION_SCALE
+		data[base + 5] = qx
+		data[base + 6] = qy
+		data[base + 7] = qz
+		data[base + 8] = math.sqrt(math.max(0, 1 - qx * qx - qy * qy - qz * qz))
+		offset += BALL_BYTES
+	end
+	return { t = buffer.readf32(b, 0), data = data }
+end
+
 return TrajectoryCodec

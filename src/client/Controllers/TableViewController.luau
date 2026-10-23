@@ -31,12 +31,22 @@ type Track = { times: { number }, cframes: { CFrame }, cursor: number }
 
 type Playback = {
 	t: number,
+	timeScale: number, -- HypeController slows the decisive moment down
 	duration: number,
 	frameDt: number,
 	tracks: { [number]: Track },
 	events: { PoolPhysics.Event },
 	nextEvent: number,
 	final: { PoolPhysics.BallState },
+	hype: Remotes.HypePayload?,
+}
+
+-- The last shot played at a table, kept for the replay (clip mode).
+export type LastShot = {
+	before: { PoolPhysics.BallState },
+	decoded: TrajectoryCodec.Decoded,
+	final: { PoolPhysics.BallState },
+	hype: Remotes.HypePayload?,
 }
 
 export type View = {
@@ -47,6 +57,7 @@ export type View = {
 	parts: { [number]: BasePart },
 	folder: Folder,
 	playback: Playback?,
+	lastShot: LastShot?,
 }
 
 local BALL_COLORS: { [number]: Color3 } = {
@@ -69,6 +80,7 @@ local seatedId: string? = nil
 
 local TableViewController = {
 	SeatChanged = Signal.new(), -- (tableId: string?)
+	PlaybackFinished = Signal.new(), -- (tableId: string, hype: Remotes.HypePayload?)
 	ShotStarted = Signal.new(), -- (tableId: string)
 	StateChanged = Signal.new(), -- (tableId: string): balls are at rest in view.balls
 }
@@ -92,7 +104,8 @@ end
 
 -- Fallback ball with a visible mark (stripe band or spot) so rolling and spin read on screen.
 local function makePrimitiveBall(id: number, diameter: number): BasePart
-	local stripe = id >= 9
+	local secondCue = id == 16 -- speed pool: player 2's cue ball
+	local stripe = id >= 9 and not secondCue
 	local ball = Instance.new("Part")
 	ball.Name = `Ball{id}`
 	ball.Shape = Enum.PartType.Ball
@@ -102,7 +115,7 @@ local function makePrimitiveBall(id: number, diameter: number): BasePart
 	ball.CanQuery = false
 	ball.CanTouch = false
 	ball.Material = Enum.Material.SmoothPlastic
-	ball.Color = if stripe then WHITE else BALL_COLORS[id]
+	ball.Color = if stripe or secondCue then WHITE else BALL_COLORS[id]
 	if stripe then
 		local band = Instance.new("Part")
 		band.Shape = Enum.PartType.Cylinder
@@ -113,7 +126,7 @@ local function makePrimitiveBall(id: number, diameter: number): BasePart
 		local spot = Instance.new("Part")
 		spot.Shape = Enum.PartType.Ball
 		spot.Size = Vector3.one * diameter * 0.3
-		spot.Color = if id == 0 then CUE_SPOT else WHITE
+		spot.Color = if id == 0 then CUE_SPOT elseif secondCue then Color3.fromRGB(30, 80, 220) else WHITE
 		attach(ball, spot, CFrame.new(0, diameter * 0.4, 0))
 	end
 	return ball
@@ -176,10 +189,16 @@ local function finish(view: View)
 	view.playback = nil
 	view.balls = playback.final
 	applyBalls(view)
+	TableViewController.PlaybackFinished:Fire(view.id, playback.hype)
 	TableViewController.StateChanged:Fire(view.id)
 end
 
-local function buildPlayback(view: View, decoded: TrajectoryCodec.Decoded, final: { PoolPhysics.BallState }): Playback
+local function buildPlayback(
+	view: View,
+	decoded: TrajectoryCodec.Decoded,
+	final: { PoolPhysics.BallState },
+	hype: Remotes.HypePayload?
+): Playback
 	local frameDt = 1 / decoded.recordHz
 	local tracks: { [number]: Track } = {}
 	for _, frame in decoded.frames do
@@ -217,6 +236,8 @@ local function buildPlayback(view: View, decoded: TrajectoryCodec.Decoded, final
 	local last = decoded.frames[#decoded.frames]
 	return {
 		t = 0,
+		timeScale = 1,
+		hype = hype,
 		duration = if last then last.t else 0,
 		frameDt = frameDt,
 		tracks = tracks,
@@ -251,7 +272,7 @@ local function playEvent(view: View, event: PoolPhysics.Event)
 end
 
 local function step(view: View, playback: Playback, dt: number)
-	playback.t += dt
+	playback.t += dt * playback.timeScale
 	local t = playback.t
 	for id, track in playback.tracks do
 		local part = view.parts[id]
@@ -351,6 +372,7 @@ local function onTableState(snapshot: Remotes.TableSnapshot)
 			parts = {},
 			folder = folder,
 			playback = nil,
+			lastShot = nil,
 		}
 		views[snapshot.tableId] = view
 	end
@@ -367,7 +389,9 @@ local function onShotResult(message: Remotes.ShotResultPayload)
 		return
 	end
 	finish(view)
-	view.playback = buildPlayback(view, TrajectoryCodec.decode(message.trajectory), message.balls)
+	local decoded = TrajectoryCodec.decode(message.trajectory)
+	view.lastShot = { before = table.clone(view.balls), decoded = decoded, final = message.balls, hype = message.hype }
+	view.playback = buildPlayback(view, decoded, message.balls, message.hype)
 	TableViewController.ShotStarted:Fire(view.id)
 end
 
@@ -394,6 +418,117 @@ function TableViewController.moveBall(view: View, id: number, x: number, y: numb
 			end
 		end
 	end
+end
+
+-- Plays the last shot again from its starting position (no splash). False if there is nothing
+-- to replay or a live shot is playing.
+function TableViewController.replay(view: View): boolean
+	local last = view.lastShot
+	if not last or view.playback then
+		return false
+	end
+	view.balls = table.clone(last.before)
+	applyBalls(view)
+	view.playback = buildPlayback(view, last.decoded, last.final, nil)
+	return true
+end
+
+-- Puts the camera back to the seated table view (after the clip took it over).
+function TableViewController.resetCamera()
+	local view = TableViewController.seatedView()
+	if view then
+		Workspace.CurrentCamera.CFrame = cameraTarget(view)
+		Workspace.CurrentCamera.FieldOfView = Controls.CameraFov
+	end
+end
+
+-- Chaos: gold outline on the golden balls.
+function TableViewController.setHighlights(view: View, ids: { number })
+	for id, part in view.parts do
+		local existing = part:FindFirstChild("Golden")
+		local wanted = table.find(ids, id) ~= nil
+		if wanted and not existing then
+			local highlight = Instance.new("Highlight")
+			highlight.Name = "Golden"
+			highlight.FillColor = Color3.fromRGB(255, 200, 40)
+			highlight.OutlineColor = Color3.fromRGB(255, 230, 120)
+			highlight.FillTransparency = 0.4
+			highlight.Parent = part
+		elseif not wanted and existing then
+			existing:Destroy()
+		end
+	end
+end
+
+-- Chaos: a fog layer over the table for the player who got fogged.
+local fogPart: Part? = nil
+function TableViewController.setFog(view: View, on: boolean)
+	if on and not fogPart then
+		local fog = Instance.new("Part")
+		fog.Name = "Fog"
+		fog.Anchored = true
+		fog.CanCollide = false
+		fog.CanQuery = false
+		fog.Material = Enum.Material.SmoothPlastic
+		fog.Color = Color3.fromRGB(230, 230, 235)
+		fog.Transparency = 0.25
+		local g = view.geometry
+		fog.Size = Vector3.new(TableSpace.studs(2 * g.halfLength) * 0.6, 0.05, TableSpace.studs(2 * g.halfWidth))
+		fog.CFrame = view.surface * CFrame.new(TableSpace.studs(g.halfLength * 0.35), TableSpace.studs(0.12), 0)
+		fog.Parent = Workspace
+		fogPart = fog
+	elseif not on and fogPart then
+		fogPart:Destroy()
+		fogPart = nil
+	end
+end
+
+-- Sandbox: switch between the fixed top view and a free orbit camera around the table.
+local orbitAnchor: Part? = nil
+function TableViewController.toggleFreeCamera()
+	local view = TableViewController.seatedView()
+	local camera = Workspace.CurrentCamera
+	if not view then
+		return
+	end
+	if orbitAnchor then
+		orbitAnchor:Destroy()
+		orbitAnchor = nil
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = cameraTarget(view)
+		camera.FieldOfView = Controls.CameraFov
+		return
+	end
+	local anchor = Instance.new("Part")
+	anchor.Name = "OrbitAnchor"
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.one
+	anchor.CFrame = view.surface
+	anchor.Parent = Workspace
+	orbitAnchor = anchor
+	camera.FieldOfView = 50
+	camera.CameraSubject = anchor
+	camera.CameraType = Enum.CameraType.Custom
+end
+
+-- Speed pool: sounds and pocket effects for live events.
+function TableViewController.playEvents(view: View, events: { PoolPhysics.Event })
+	for _, event in events do
+		playEvent(view, event)
+	end
+end
+
+-- Speed pool: makes sure every ball in the list has a part (e.g. the second cue ball).
+function TableViewController.ensureBalls(view: View, balls: { PoolPhysics.BallState })
+	view.balls = balls
+	applyBalls(view)
+end
+
+function TableViewController.view(tableId: string): View?
+	return views[tableId]
 end
 
 function TableViewController.seatedView(): View?
