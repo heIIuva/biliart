@@ -14,6 +14,7 @@ local Text = require(Shared.Util.Text)
 local Titles = require(Shared.Config.Titles)
 local Kit = require(script.Parent.Parent.UI.Kit)
 local MenuController = require(script.Parent.MenuController)
+local TableViewController = require(script.Parent.TableViewController)
 
 local ADMIN_EFFECTS = { "AllTiger", "GoldenRain", "TripleRewards" }
 local ADMIN_MINUTES = 30
@@ -92,14 +93,14 @@ local function buildAdmin(gui: ScreenGui)
 	end)
 	MenuController.addButton("MENU_ADMIN", 22, function()
 		panel.Visible = true
-	end)
+	end, panel)
 end
 
 function EventController.Start()
-	local gui = Kit.screen("Events", 1)
+	local gui = Kit.screen("Events", 6) -- the admin panel opens above the menu
 	banner = Kit.label("Banner", gui, "", {
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 8),
+		Position = UDim2.new(0.5, 0, 0, 56), -- below the currency bar
 		Size = UDim2.fromOffset(520, 28),
 		TextSize = 16,
 		TextColor3 = Kit.GOLD,
@@ -107,12 +108,15 @@ function EventController.Start()
 	})
 	newsLabel = Kit.label("News", gui, "", {
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 36),
+		Position = UDim2.new(0.5, 0, 0, 84),
 		Size = UDim2.fromOffset(520, 24),
 		TextSize = 14,
 		TextStrokeTransparency = 0.4,
 	})
 	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	TableViewController.SeatChanged:Connect(function(tableId)
+		gui.Enabled = tableId == nil -- the match HUD uses the top of the screen
+	end)
 	if table.find(Admins.UserIds, Players.LocalPlayer.UserId) then
 		buildAdmin(gui)
 	end

@@ -101,7 +101,7 @@ function SettingsController.Start()
 	gui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 	MenuController.addButton("MENU_SETTINGS", 21, function()
 		panel.Visible = true
-	end)
+	end, panel)
 	PlayerDataController.Changed:Connect(function(data)
 		settings = table.clone(data.settings)
 		refresh()

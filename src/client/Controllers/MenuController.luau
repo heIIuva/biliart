@@ -25,9 +25,10 @@ local coinsLabel: TextLabel
 local gemsLabel: TextLabel
 local levelLabel: TextLabel
 local menuButtons: Frame
+local currencyBar: Frame
 local panels: { [Page]: { panel: Frame, list: ScrollingFrame } } = {}
 local open: Page? = nil
-local extraPages: { [string]: () -> () } = {} -- later phases add buttons (dojo, shop)
+local extraPanels: { GuiObject } = {} -- panels of later phases (dojo, shop, settings): one open at a time
 
 local MenuController = {}
 
@@ -241,7 +242,7 @@ local function refresh()
 	if not data then
 		return
 	end
-	coinsLabel.Text = `🪙 {data.coins}`
+	coinsLabel.Text = `💰 {data.coins}`
 	gemsLabel.Text = `💎 {data.gems}`
 	levelLabel.Text = Text.format("MENU_LEVEL", { level = data.level })
 	local page: Page? = open
@@ -261,15 +262,25 @@ local function show(page: Page?)
 	for name, entry in panels do
 		entry.panel.Visible = name == page
 	end
+	if page then
+		for _, other in extraPanels do
+			other.Visible = false
+		end
+	end
 	open = page
 	refresh()
 end
 
--- Adds a menu button for a later phase's screen (dojo, shop).
-function MenuController.addButton(key: string, order: number, onActivated: () -> ())
-	extraPages[key] = onActivated
+-- Adds a menu button for a later phase's screen (dojo, shop). `panel` is closed when another opens.
+function MenuController.addButton(key: string, order: number, onActivated: () -> (), panel: GuiObject?)
+	if panel then
+		table.insert(extraPanels, panel)
+	end
 	Kit.button(key, menuButtons, key, { Size = UDim2.fromOffset(130, 46), LayoutOrder = order }, function()
 		show(nil)
+		for _, other in extraPanels do
+			other.Visible = false
+		end
 		onActivated()
 	end)
 end
@@ -282,6 +293,7 @@ function MenuController.Init()
 		Size = UDim2.fromOffset(330, 40),
 	})
 	Kit.corner(bar, 0.3)
+	currencyBar = bar
 	levelLabel = Kit.label("Level", bar, "", { Size = UDim2.fromScale(0.3, 1), TextColor3 = Kit.GOLD })
 	coinsLabel = Kit.label("Coins", bar, "", { Position = UDim2.fromScale(0.3, 0), Size = UDim2.fromScale(0.38, 1) })
 	gemsLabel = Kit.label("Gems", bar, "", { Position = UDim2.fromScale(0.68, 0), Size = UDim2.fromScale(0.32, 1) })
@@ -289,11 +301,15 @@ function MenuController.Init()
 	menuButtons = Kit.frame("Buttons", gui, {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 16, 1, -16),
-		Size = UDim2.fromOffset(140, 380),
+		Size = UDim2.fromOffset(276, 270),
 		BackgroundTransparency = 1,
 	})
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, 8)
+	-- Two columns of five: one tall column reached up under the Roblox chat window, which eats clicks.
+	local layout = Instance.new("UIGridLayout")
+	layout.CellSize = UDim2.fromOffset(130, 46)
+	layout.CellPadding = UDim2.fromOffset(8, 8)
+	layout.FillDirection = Enum.FillDirection.Vertical
+	layout.FillDirectionMaxCells = 5
 	layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = menuButtons
@@ -337,6 +353,7 @@ local function buildCodes()
 		Size = UDim2.fromOffset(360, 170),
 		Visible = false,
 		Active = true,
+		ZIndex = 2,
 	})
 	Kit.corner(panel, 0.08)
 	local box = Instance.new("TextBox")
@@ -366,7 +383,7 @@ local function buildCodes()
 	end)
 	MenuController.addButton("MENU_CODES", 20, function()
 		panel.Visible = true
-	end)
+	end, panel)
 end
 
 function MenuController.Start()
@@ -375,6 +392,7 @@ function MenuController.Start()
 	PlayerDataController.Changed:Connect(refresh)
 	TableViewController.SeatChanged:Connect(function(tableId)
 		menuButtons.Visible = tableId == nil
+		currencyBar.Visible = tableId == nil -- at the table it would cover the match status panel
 		if tableId then
 			show(nil)
 		end

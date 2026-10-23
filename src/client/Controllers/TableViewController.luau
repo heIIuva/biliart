@@ -133,6 +133,15 @@ end
 
 local function applyBalls(view: View)
 	local R = view.geometry.ballRadius
+	local present: { [number]: boolean } = {}
+	for _, b in view.balls do
+		present[b.id] = true
+	end
+	for id, part in view.parts do
+		if not present[id] then
+			part.Parent = nil -- a new layout (trick, sandbox) without this ball
+		end
+	end
 	for _, b in view.balls do
 		local part = view.parts[b.id]
 		if not part then

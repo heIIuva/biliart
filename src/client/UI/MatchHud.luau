@@ -273,15 +273,17 @@ function MatchHud.new(callbacks: Callbacks): Hud
 		BackgroundColor3 = Color3.fromRGB(60, 60, 60),
 	}, callbacks.onLeave)
 
-	-- Bottom-left mode bar: chaos meter + super shot, or sandbox tools.
+	-- Mode bar centered above the Stand up button: chaos meter + super shot, or sandbox tools.
+	-- (At the bottom-left it ran under Stand up on narrow screens.)
 	local modeBar = frame("ModeBar", gui, {
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 16, 1, -16),
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -76),
 		Size = UDim2.fromOffset(440, 48),
 		BackgroundTransparency = 1,
 	})
 	local barLayout = Instance.new("UIListLayout")
 	barLayout.FillDirection = Enum.FillDirection.Horizontal
+	barLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	barLayout.Padding = UDim.new(0, 8)
 	barLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	barLayout.Parent = modeBar

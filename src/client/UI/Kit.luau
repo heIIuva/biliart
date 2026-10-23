@@ -92,6 +92,7 @@ function Kit.panel(name: string, parent: Instance, titleKey: string, onClose: ()
 		Size = UDim2.fromScale(0.7, 0.75),
 		Visible = false,
 		Active = true,
+		ZIndex = 2, -- above sibling menu buttons created later
 	})
 	Kit.corner(panel, 0.04)
 	local size = Instance.new("UISizeConstraint")

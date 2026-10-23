@@ -224,7 +224,7 @@ function DojoController.Start()
 		end)
 		Remotes.Event("DojoAction"):FireServer({ action = "open" })
 		render()
-	end)
+	end, panel)
 	Remotes.Event("DojoTick").OnClientEvent:Connect(function(tick: { cash: number, income: number })
 		cash, income = tick.cash, tick.income
 		if panel.Visible then

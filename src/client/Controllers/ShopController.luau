@@ -135,7 +135,7 @@ function ShopController.Start()
 	MenuController.addButton("MENU_SHOP", 6, function()
 		panel.Visible = true
 		render()
-	end)
+	end, panel)
 	Remotes.Event("ShopState").OnClientEvent
 		:Connect(function(state: { passes: { [string]: boolean }, serverHypeUntil: number })
 			passes = state.passes
