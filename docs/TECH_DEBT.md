@@ -27,6 +27,23 @@ Rojo disconnected from Studio when Play started; phases 4–6 were built and che
       uses its mock and rarity % stays hidden).
 - [ ] Hanzi and title names are placeholders: native speaker check.
 
+## Studio pass 2026-10-23 (solo Play, place not published)
+Checked and working: tutorial break → TIGER + spirit unlocked (via remote); bot match turns and titles;
+chaos (golden balls, tiger meter); sandbox (place ball, tools); trick of the week (stored solution solves
+in Studio, reward paid); daily reward claim; quests progress; spirits / shop / dojo / settings panels;
+dojo plot, table purchase, till collect; event banner countdown; admin panel, golden rain pickups,
+all-tiger flag; settings validation and SoundGroup volume. Fixed during the pass: commits af529cd, 8e17bc9.
+Still open:
+- [ ] Shooting through the GUI power bar with synthetic MCP mouse input fired only once out of three tries;
+      re-check by hand with a real mouse and on a phone.
+- [ ] Needs two players (Studio Test → Server + 2 clients): Casual/Ranked queue, Elo, King of the table,
+      speed pool, quick chat above the head, gifts.
+- [ ] Needs a published place with API access: DataStore saves and rejoin (offline earnings), live config,
+      leaderboards, hype counters (MemoryStore), purchases and rewarded ads.
+- [ ] Mode picker list covers the Stand up button a little; leaderboard board titles are tiny.
+- [ ] `rbxassetid://203785492 failed due to: Asset type does not match requested type` on every start —
+      not referenced by our code or any instance (likely avatar/core asset; unconfirmed).
+
 ## Phases 7–11 — not verified in Studio (2026-10-23)
 Built and checked offline only (Lune tests, strict types, lint).
 - [ ] Phase 7: queue and Casual/Ranked with two clients (Studio "Start" with 2 players), Elo after a match,
