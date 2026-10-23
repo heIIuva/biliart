@@ -17,6 +17,26 @@ return {
 		Pocket = { id = 9113442190, start = 0.65, length = 0.85, gain = 1.5 }, -- Billiards Shoot Balls Into Pockets 1
 		Land = { id = 9113441345, start = 0.23, length = 0.27, gain = 4 }, -- Billiards Balls Rolling On Table 3
 	} :: { [string]: SoundAsset },
+	-- Image ids of assets/balls/textures/ball_XX.png, indexed by ball number. 0 = primitive ball.
+	BallTextures = {
+		[0] = 0,
+		[1] = 0,
+		[2] = 0,
+		[3] = 0,
+		[4] = 0,
+		[5] = 0,
+		[6] = 0,
+		[7] = 0,
+		[8] = 0,
+		[9] = 0,
+		[10] = 0,
+		[11] = 0,
+		[12] = 0,
+		[13] = 0,
+		[14] = 0,
+		[15] = 0,
+	} :: { [number]: number },
+	CueTexture = 0, -- Image id of assets/cue/cue.png
 	Images = {} :: { [string]: number },
 	Meshes = {} :: { [string]: number },
 }
