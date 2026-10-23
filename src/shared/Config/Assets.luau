@@ -19,24 +19,27 @@ return {
 	} :: { [string]: SoundAsset },
 	-- Image ids of assets/balls/textures/ball_XX.png, indexed by ball number. 0 = primitive ball.
 	BallTextures = {
-		[0] = 0,
-		[1] = 0,
-		[2] = 0,
-		[3] = 0,
-		[4] = 0,
-		[5] = 0,
-		[6] = 0,
-		[7] = 0,
-		[8] = 0,
-		[9] = 0,
-		[10] = 0,
-		[11] = 0,
-		[12] = 0,
-		[13] = 0,
-		[14] = 0,
-		[15] = 0,
+		[0] = 94582154597185,
+		[1] = 94484194246352,
+		[2] = 137300563916549,
+		[3] = 125026440322148,
+		[4] = 106935527211424,
+		[5] = 94577084985054,
+		[6] = 97222397539262,
+		[7] = 131926019974463,
+		[8] = 138919383928414,
+		[9] = 86317855772132,
+		[10] = 134682479878788,
+		[11] = 130362129298563,
+		[12] = 127578697825006,
+		[13] = 78247925672085,
+		[14] = 81772209018229,
+		[15] = 134898959211875,
 	} :: { [number]: number },
-	CueTexture = 0, -- Image id of assets/cue/cue.png
+	CueTexture = 121590670390594, -- Image id of assets/cue/cue.png
 	Images = {} :: { [string]: number },
-	Meshes = {} :: { [string]: number },
+	-- Model asset ids holding one MeshPart each; MeshService loads them into ReplicatedStorage.Assets.
+	Meshes = {
+		BallMesh = 101280782263579, -- assets/balls/pool_ball.obj as glTF, Z pre-mirrored (the importer mirrors Z)
+	} :: { [string]: number },
 }

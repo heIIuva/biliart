@@ -12,15 +12,18 @@
 | `balls/preview.png` | как это выглядит на сфере |
 | `cue/cue.obj`, `cue/cue.png` | кий: длина 1, ось X, наконечник на +X; текстура 1024×128 |
 
-## Как завести в Studio (~3 минуты)
+## Как это попадает в игру
 
-1. **Текстуры:** Window → Asset Manager → Bulk Import → выбрать все 16 `ball_XX.png` и `cue.png`.
-2. **Меш шара:** File → Import 3D → `pool_ball.obj`. Переименовать в `BallMesh`, `Anchored = true`,
-   `CollisionFidelity = Box`, положить в `ReplicatedStorage.Assets`. Сохранить как `assets/BallMesh.rbxm`
-   (правый клик → Save to File) и прописать в `default.project.json`.
-3. **Кий:** так же импортировать `cue.obj` → `CueMesh`, `TextureID` = id `cue.png`,
-   `Size = (1.47, 0.029, 0.029) × StudsPerMeter`.
-4. ID картинок вписать в `Config/Assets.luau` (`BallTextures`, `CueTexture`).
+Загружено через Open Cloud (Assets API), id лежат в `src/shared/Config/Assets.luau`.
+
+- **Текстуры** `ball_XX.png` и `cue.png` загружены как Image → `BallTextures`, `CueTexture`.
+- **Меш шара.** Open Cloud не принимает `.obj`, поэтому `python3 tools/obj_to_glb.py balls/pool_ball.obj BallMesh.glb`
+  и загрузка как Model → `Meshes.BallMesh`. Импортёр glTF в Roblox отражает модель по Z, поэтому конвертер заранее
+  отражает Z (с разворотом треугольников), а UV оставляет как в OBJ. При старте сервера `MeshService` достаёт MeshPart
+  из модели в `ReplicatedStorage.Assets.BallMesh`; клиент клонирует его на каждый шар и ставит текстуру.
+- **Кий** (`cue.obj`) пока не подключён: в игре кий из примитива.
+
+После перегенерации текстур или меша их нужно загрузить заново и обновить id.
 
 Ориентация совпадает с текущим кодом: при единичном повороте номер смотрит вверх в камеру стола
 и читается правильно, полоса идёт вокруг оси X — как была цилиндрическая полоса.

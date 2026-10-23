@@ -133,18 +133,17 @@ local function makePrimitiveBall(id: number, diameter: number): BasePart
 end
 
 -- MeshId cannot be set at runtime, so every textured ball is a clone of one template mesh
--- (ReplicatedStorage.Assets.BallMesh, imported from assets/balls/pool_ball.obj in Studio).
+-- (ReplicatedStorage.Assets.BallMesh, loaded by the server's MeshService).
 local function findBallTemplate(): MeshPart?
 	local folder = ReplicatedStorage:FindFirstChild("Assets")
 	local template = folder and folder:FindFirstChild("BallMesh")
 	return if template and template:IsA("MeshPart") then template else nil
 end
 
-local ballTemplate = findBallTemplate()
-
 -- Textured mesh ball. Mesh pole is local X, number discs at local +Y/-Y, glyph "up" = local -Z,
 -- so with identity rotation the number faces the top-down table camera upright.
 local function makeBall(id: number, diameter: number): BasePart
+	local ballTemplate = findBallTemplate()
 	local texture = Assets.BallTextures[id]
 	if not ballTemplate or not texture or texture == 0 then
 		return makePrimitiveBall(id, diameter)
