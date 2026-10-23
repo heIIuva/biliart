@@ -2,6 +2,8 @@
 -- Progression and economy formulas.
 local Economy = require("../src/shared/Config/Economy")
 local Progression = require("../src/shared/Game/Progression")
+local Dojo = require("../src/shared/Config/Dojo")
+local DojoMath = require("../src/shared/Game/Dojo")
 local Spirits = require("../src/shared/Config/Spirits")
 
 return {
@@ -91,5 +93,57 @@ return {
 		assert(favWin - 1400 < underWin - 1000, "an upset gains more")
 		local x, y = Progression.elo(1234, 987, 0, 32)
 		assert(x + y == 1234 + 987, "zero-sum")
+	end,
+
+	["dojo: income formula with tables, spirits, rebirths, decor and extra multipliers"] = function()
+		local data = Progression.template()
+		assert(DojoMath.incomePerSecond(data, 1) == 0, "no tables, no income")
+		data.dojo.tables.T1 = 2 -- base 1 x level 2
+		data.dojo.tables.T2 = 1 -- base 3 x level 1
+		assert(DojoMath.incomePerSecond(data, 1) == 5, "sum of base x level")
+		data.spirits.Tiger = { level = 5, progress = 150, skin = "" }
+		data.dojo.rebirths = 2
+		data.dojo.upgrades.Lanterns = 1
+		local expected = 5 * (1 + 5 * Spirits.DojoBonusPerLevel) * (1 + 2 * Dojo.RebirthBonus) * 1.05 * 2
+		assert(math.abs(DojoMath.incomePerSecond(data, 2) - expected) < 1e-9, "multipliers stack")
+	end,
+
+	["dojo: costs grow, stop at max level"] = function()
+		local slot = DojoMath.slot("T1") :: any
+		assert(DojoMath.upgradeCost(slot, 0) == slot.price, "buying costs the price")
+		assert((DojoMath.upgradeCost(slot, 3) :: number) > (DojoMath.upgradeCost(slot, 2) :: number), "grows")
+		assert(DojoMath.upgradeCost(slot, slot.maxLevel) == nil, "max level")
+	end,
+
+	["dojo: offline earnings are capped and safe against bad clocks"] = function()
+		local amount, seconds = DojoMath.offline(10, 1000, 1000 + 3600, 8)
+		assert(seconds == 3600 and amount == math.floor(10 * Dojo.OfflineRate * 3600), "one hour")
+		local _, capped = DojoMath.offline(10, 1000, 1000 + 100 * 3600, 8)
+		assert(capped == 8 * 3600, "capped at 8 h")
+		assert(DojoMath.offline(10, 5000, 1000, 8) == 0, "clock went back")
+		assert(DojoMath.offline(10, 0, 1000, 8) == 0, "first visit")
+	end,
+
+	["dojo: rebirth needs coins and titles, resets and raises the multiplier"] = function()
+		local data = Progression.template()
+		local need = DojoMath.rebirthRequirement(0)
+		data.coins = need.coins
+		assert(not DojoMath.canRebirth(data), "titles missing")
+		for titleId, count in need.titles do
+			data.stats.titles[titleId] = count
+		end
+		assert(DojoMath.canRebirth(data), "requirements met")
+		data.dojo.tables.T1 = 5
+		DojoMath.rebirth(data)
+		assert(data.coins == 0 and data.dojo.tables.T1 == nil and data.dojo.rebirths == 1, "reset")
+		local second = DojoMath.rebirthRequirement(1)
+		assert(second.ranked, "the second rebirth wants a ranked title")
+		data.coins = second.coins
+		for titleId, count in second.titles do
+			data.stats.titles[titleId] = count
+		end
+		assert(not DojoMath.canRebirth(data), "casual titles do not count for a ranked requirement")
+		local beyond = DojoMath.rebirthRequirement(5)
+		assert(beyond.coins > Dojo.Rebirths[#Dojo.Rebirths].coins, "keeps growing")
 	end,
 }

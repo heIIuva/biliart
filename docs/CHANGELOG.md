@@ -78,3 +78,14 @@
 - `SocialService`: friends bonus (+10% per friend, max +30%), invites (LaunchData → reward delivered
   to the inviter's saved data via ProfileStore messages), one-time group bonus (group id to set),
   codes, quick chat phrases and emotes shown above the sender's head.
+
+## Phase 8 — dojo (idle)
+- `Config/Dojo` + `Game/Dojo` (pure, tested): income = Σ(base × level) × spirits × rebirths × decor
+  × extra (King +25%, later game pass/boosts/events), costs, capped offline earnings (8 h / 24 h VIP,
+  safe against bad clocks), rebirth requirements (coins + titles, some in ranked matches).
+- `DojoService`: a plot per player on a ring around the lobby (appears on join, removed on leave),
+  tables with NPC students, decor, till with a Collect prompt (owner only), income every second,
+  offline earnings stored until claimed, rebirth "New Year", dojo income leaderboard.
+  Hooks for other systems: `addMultiplierSource`, `addOfflineCapSource`.
+- Client: dojo screen (income, till, tables, decor, rebirth, go to dojo), "While you were away…"
+  popup (x2 ad button wired in phase 9), idle animation of students.

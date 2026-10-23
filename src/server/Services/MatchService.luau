@@ -216,7 +216,8 @@ local function progressShot(
 	player: Player,
 	shot: PoolPhysics.ShotParams,
 	report: ShotReport.Report,
-	title: Titles.Title?
+	title: Titles.Title?,
+	ranked: boolean
 )
 	local data = DataService.get(player)
 	if not data then
@@ -232,6 +233,9 @@ local function progressShot(
 		end
 	end
 	if title then
+		if ranked then
+			data.stats.rankedTitles[title.id] = (data.stats.rankedTitles[title.id] or 0) + 1
+		end
 		SpiritService.onTitle(player, title.id)
 		QuestService.event(player, "title", title.id)
 		if title.kind == "Title" then
@@ -375,7 +379,7 @@ function playShot(
 	end
 	if shooter then
 		AnalyticsService.funnel(shooter, AnalyticsService.Funnel.FirstShot, "FirstShot")
-		progressShot(shooter, shot, report, title)
+		progressShot(shooter, shot, report, title, match.mode == "Ranked")
 	end
 	if outcome.nextPlayer == before.current and not outcome.gameOver then
 		match.visitOwnPots += report.pottedOwn

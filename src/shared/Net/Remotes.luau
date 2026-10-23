@@ -111,6 +111,9 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	RedeemCode = "RemoteEvent", -- client -> server: code text (never shown to anyone)
 	QuickChat = "RemoteEvent", -- client -> server: phrase or emote id
 	QuickChatShown = "RemoteEvent", -- server -> clients: QuickChatMessage
+	DojoAction = "RemoteEvent", -- client -> server: { action = "buy" | "decor" | "rebirth" | "claimOffline" | "visit", id? }
+	DojoTick = "RemoteEvent", -- server -> client: { cash, income } every second
+	OfflineEarnings = "RemoteEvent", -- server -> client: { amount, seconds }
 }
 
 local FOLDER_NAME = "Remotes"

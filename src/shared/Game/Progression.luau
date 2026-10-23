@@ -18,7 +18,14 @@ export type PlayerData = {
 	level: number,
 	trophies: number,
 	rating: number,
-	stats: { shots: number, pots: number, wins: number, losses: number, titles: { [string]: number } },
+	stats: {
+		shots: number,
+		pots: number,
+		wins: number,
+		losses: number,
+		titles: { [string]: number },
+		rankedTitles: { [string]: number }, -- titles earned in ranked matches (rebirth requirements)
+	},
 	spirits: { [string]: { level: number, progress: number, skin: string } },
 	equippedSpirit: string,
 	cosmetics: {
@@ -34,6 +41,7 @@ export type PlayerData = {
 		tables: { [string]: number }, -- table slot -> level (0 = not bought)
 		upgrades: { [string]: number },
 		cash: number, -- coins waiting in the dojo till
+		pendingOffline: number, -- offline earnings not claimed yet
 		lastCollectTime: number,
 		rebirths: number,
 	},
@@ -65,7 +73,7 @@ function Progression.template(): PlayerData
 		level = 1,
 		trophies = 0,
 		rating = 1000,
-		stats = { shots = 0, pots = 0, wins = 0, losses = 0, titles = {} },
+		stats = { shots = 0, pots = 0, wins = 0, losses = 0, titles = {}, rankedTitles = {} },
 		spirits = {},
 		equippedSpirit = "",
 		cosmetics = {
@@ -77,7 +85,7 @@ function Progression.template(): PlayerData
 			splashSkins = {},
 		},
 		equipped = { cue = Cues.Base, table = "", ballSet = "", announcer = "", emote = "", splashSkin = "" },
-		dojo = { tables = {}, upgrades = {}, cash = 0, lastCollectTime = 0, rebirths = 0 },
+		dojo = { tables = {}, upgrades = {}, cash = 0, pendingOffline = 0, lastCollectTime = 0, rebirths = 0 },
 		daily = { streak = 0, lastClaimDay = -1 },
 		quests = { day = -1, week = -1, daily = {}, weekly = {} },
 		purchases = { recentReceiptIds = {}, starterPack = false },
