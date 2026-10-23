@@ -18,4 +18,14 @@ function Text.get(key: string): string
 	return if russian then entry.ru else entry.en
 end
 
+-- Text with {name} placeholders filled from `values`.
+function Text.format(key: string, values: { [string]: string | number }): string
+	return (
+		string.gsub(Text.get(key), "{(%w+)}", function(name)
+			local value = values[name]
+			return if value ~= nil then tostring(value) else "{" .. name .. "}"
+		end)
+	)
+end
+
 return Text

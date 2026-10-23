@@ -70,12 +70,18 @@ export type SimOptions = {
 	params: Params?,
 }
 
+-- A cue ball flight from takeoff to touchdown (for "jumped over a ball" checks).
+export type Jump = { x0: number, y0: number, x1: number, y1: number }
+
 export type SimResult = {
 	finalState: { BallState },
 	events: { Event },
 	frames: { Frame },
 	recordHz: number,
 	duration: number,
+	travel: { [number]: number }, -- distance each ball rolled/slid/flew (meters)
+	cueCurve: number, -- max sideways drift of the cue ball from its aim line before its first contact (masse)
+	cueJumps: { Jump },
 }
 
 type Ball = {
@@ -102,6 +108,7 @@ type Ball = {
 	qz: number,
 	qw: number,
 	dirty: boolean, -- changed state since the last recorded frame
+	travel: number,
 }
 
 local EventKind = {
@@ -188,6 +195,7 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 			qz = s.qz or 0,
 			qw = s.qw or 1,
 			dirty = false,
+			travel = 0,
 		}
 		table.insert(balls, ball)
 		if s.id == 0 then
@@ -200,6 +208,12 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 	local events: { Event } = {}
 	local frames: { Frame } = {}
 	local t = 0
+	-- Cue ball path stats for the shot report.
+	local aimX, aimY, aimDX, aimDY = 0, 0, 1, 0
+	local cueCurve = 0
+	local cueTouched = false -- first ball/cushion contact ends the curve measurement
+	local cueJumps: { Jump } = {}
+	local takeoffX, takeoffY = 0, 0
 
 	local function emit(kind: number, a: number, b: number, speed: number, at: number)
 		table.insert(events, { t = at, kind = kind, a = a, b = b, speed = speed })
@@ -226,11 +240,13 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 		cue.wz = k * spinX * ce
 		cue.status = "Sliding"
 		emit(EventKind.CueStrike, 0, 0, speed, 0)
+		aimX, aimY, aimDX, aimDY = cue.x, cue.y, fx, fy
 		local vz = P.JumpRestitution * speed * se
 		if vz >= P.MinJumpSpeed then
 			cue.vz = vz
 			cue.status = "Airborne"
 			emit(EventKind.Airborne, 0, 0, vz, 0)
+			takeoffX, takeoffY = cue.x, cue.y
 		end
 	end
 
@@ -268,6 +284,7 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 		if isMoving(status) then
 			b.x += b.sx * tau
 			b.y += b.sy * tau
+			b.travel += sqrt(b.sx * b.sx + b.sy * b.sy) * tau
 			b.vx += b.ax * tau
 			b.vy += b.ay * tau
 			if status == "Sliding" then
@@ -572,6 +589,7 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 					b.vy += k * ny
 				end
 				emit(EventKind.BallBall, a.id, b.id, math.max(vn, 0), at)
+				cueTouched = cueTouched or a.id == 0 or b.id == 0
 				setSliding(a)
 				setSliding(b)
 				prepare(a, rest)
@@ -595,6 +613,7 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 					nx, ny, pocketId = nx / d, ny / d, hitEndPocket
 				end
 				local speed = contactSpeed(b, nx, ny)
+				cueTouched = cueTouched or b.id == 0
 				bounce(b, nx, ny)
 				if pocketId == 0 then
 					emit(EventKind.BallCushion, b.id, hitSegment.cushionId, speed, at)
@@ -619,6 +638,10 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 				local impact = -b.vz
 				b.z = R
 				emit(EventKind.Landed, b.id, 0, impact, at)
+				if b.id == 0 then
+					table.insert(cueJumps, { x0 = takeoffX, y0 = takeoffY, x1 = b.x, y1 = b.y })
+					takeoffX, takeoffY = b.x, b.y
+				end
 				local up = P.LandRestitution * impact
 				if up < P.MinBounceSpeed then
 					b.vz = 0
@@ -632,6 +655,9 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 		end
 
 		t += dt
+		if not cueTouched and isOnTable(cue.status) then
+			cueCurve = math.max(cueCurve, abs((cue.x - aimX) * aimDY - (cue.y - aimY) * aimDX))
+		end
 		step += 1
 
 		for _, b in balls do
@@ -688,12 +714,20 @@ function PoolPhysics.simulateShot(state: TableState, shot: ShotParams, opts: Sim
 		})
 	end
 
+	local travel: { [number]: number } = {}
+	for _, b in balls do
+		travel[b.id] = b.travel
+	end
+
 	return {
 		finalState = finalState,
 		events = events,
 		frames = frames,
 		recordHz = P.RecordHz,
 		duration = t,
+		travel = travel,
+		cueCurve = cueCurve,
+		cueJumps = cueJumps,
 	}
 end
 

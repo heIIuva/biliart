@@ -67,4 +67,49 @@ return {
 		ru = "Восьмёрка вылетела со стола",
 	},
 	RULE_LOSS_LEFT = { en = "Left the match", ru = "Игрок покинул матч" },
+
+	TITLE_TIGER = { en = "TIGER SHOT", ru = "ТИГРИНЫЙ УДАР" },
+	TITLE_CARP = { en = "GOLDEN CARP", ru = "ЗОЛОТОЙ КАРП" },
+	TITLE_PANDA = { en = "PANDA", ru = "ПАНДА" },
+	TITLE_DRAGON = { en = "DRAGON", ru = "ДРАКОН" },
+	TITLE_CRANE = { en = "CRANE", ru = "ЖУРАВЛЬ" },
+	TITLE_MONKEY = { en = "MONKEY KING", ru = "ЦАРЬ ОБЕЗЬЯН" },
+	TITLE_SERPENT = { en = "SERPENT", ru = "ЗМЕЙ" },
+	TITLE_PHOENIX = { en = "PHOENIX", ru = "ФЕНИКС" },
+	TITLE_HEAVEN = { en = "HEAVENLY", ru = "НЕБЕСНЫЙ" },
+	TITLE_WHIRLWIND = { en = "WHIRLWIND", ru = "ВИХРЬ" },
+	ANTI_SHAME = { en = "SHAME", ru = "ПОЗОР" },
+	ANTI_CRICKET = { en = "Silence…", ru = "Тишина…" },
+	ANTI_RATTLE = { en = "SO CLOSE!", ru = "ПОЧТИ!" },
+	ANTI_EIGHT_DOOM = { en = "THE END", ru = "КОНЕЦ" },
+	ANTI_FLYAWAY = { en = "LIFTOFF", ru = "ВЗЛЁТ" },
+	HYPE_RARITY = {
+		en = "Only {percent}% of shots earn this",
+		ru = "Только {percent}% ударов становятся этим титулом",
+	},
+	HYPE_COMBO = { en = "COMBO x{combo}", ru = "КОМБО x{combo}" },
+	HYPE_ANNOUNCE = { en = "{player}: {title}!", ru = "{player}: {title}!" },
+
+	TUTORIAL_OFFER = {
+		en = "New here? Make your first shot!",
+		ru = "Впервые здесь? Сделайте первый удар!",
+	},
+	TUTORIAL_START = { en = "Start", ru = "Начать" },
+	TUTORIAL_SKIP = { en = "Skip", ru = "Пропустить" },
+	TUTORIAL_AIM = {
+		en = "Touch the table to aim the cue",
+		ru = "Коснитесь стола, чтобы навести кий",
+	},
+	TUTORIAL_POWER = {
+		en = "Pull the power bar down and let go to shoot",
+		ru = "Потяните шкалу силы вниз и отпустите — удар",
+	},
+	TUTORIAL_SPIN = {
+		en = "Spin: tap the white ball top right to hit high or low",
+		ru = "Винт: белый шар справа сверху — удар выше или ниже центра",
+	},
+	TUTORIAL_BALL_IN_HAND = {
+		en = "Ball in hand: drag the cue ball anywhere",
+		ru = "Шар в руке: перетащите биток куда угодно",
+	},
 } :: { [string]: { en: string, ru: string } }

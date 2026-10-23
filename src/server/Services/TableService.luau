@@ -78,6 +78,12 @@ local function unseat(player: Player)
 	TableService.Unseated:Fire(player, entry)
 end
 
+-- Seats the player if the table is free; true on success.
+function TableService.seat(player: Player, entry: Entry): boolean
+	seat(player, entry)
+	return seated[player] == entry
+end
+
 function TableService.get(tableId: string): Entry?
 	return tables[tableId]
 end

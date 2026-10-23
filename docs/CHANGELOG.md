@@ -33,3 +33,20 @@
 - `Pool/AimPredictor`: first contact, ghost ball, object/cue directions; tested against the simulation on 300 scenes.
 - `World/TableSpace` maps simulation meters to Roblox CFrames; `Util/Text` resolves en/ru localization keys.
 - Landscape orientation is a place setting (`StarterGui.ScreenOrientation` in `default.project.json`).
+
+## Phase 3 — rules, match, bot
+- `Pool/PoolRules` (31 scenarios), `Pool/BotPlanner` + `BotService` (3 levels), `MatchService`
+  (turns, shrinking timer, ball in hand, called pocket, leaving loses), level picker / status / result UI.
+
+## Phase 4 — hype system and tutorial
+- Physics reports per-ball travel, cue curve drift (masse) and cue jumps.
+- `Pool/ShotReport` + `Pool/ShotClassifier`: titles and anti-titles are data in `Config/Titles`
+  (min/max/equals conditions, priority, secret flag); combo per visit.
+- `Pool/TitleScenarios`: a layout + known shot for every title, found by `tools/find_scenarios.luau`
+  and checked by tests; Studio-only debug panel replays any of them.
+- `HypeService`: global title counters (MemoryStore with batching, DataStore backup), rarity %,
+  server-wide announcements for Epic+, cross-server for Legendary (MessagingService, rate-limited).
+- `HypeController`: slow motion and camera push-in at the decisive moment, splash (hanzi, name,
+  rarity, combo), camera shake, title sound stub, announcement banner.
+- Tutorial: offer on join, rigged first break (always TIGER, `Config/Tutorial`), 4 hints;
+  `AnalyticsService` wrapper logs the onboarding funnel.

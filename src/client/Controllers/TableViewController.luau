@@ -30,12 +30,14 @@ type Track = { times: { number }, cframes: { CFrame }, cursor: number }
 
 type Playback = {
 	t: number,
+	timeScale: number, -- HypeController slows the decisive moment down
 	duration: number,
 	frameDt: number,
 	tracks: { [number]: Track },
 	events: { PoolPhysics.Event },
 	nextEvent: number,
 	final: { PoolPhysics.BallState },
+	hype: Remotes.HypePayload?,
 }
 
 export type View = {
@@ -68,6 +70,7 @@ local seatedId: string? = nil
 
 local TableViewController = {
 	SeatChanged = Signal.new(), -- (tableId: string?)
+	PlaybackFinished = Signal.new(), -- (tableId: string, hype: Remotes.HypePayload?)
 	ShotStarted = Signal.new(), -- (tableId: string)
 	StateChanged = Signal.new(), -- (tableId: string): balls are at rest in view.balls
 }
@@ -143,10 +146,16 @@ local function finish(view: View)
 	view.playback = nil
 	view.balls = playback.final
 	applyBalls(view)
+	TableViewController.PlaybackFinished:Fire(view.id, playback.hype)
 	TableViewController.StateChanged:Fire(view.id)
 end
 
-local function buildPlayback(view: View, decoded: TrajectoryCodec.Decoded, final: { PoolPhysics.BallState }): Playback
+local function buildPlayback(
+	view: View,
+	decoded: TrajectoryCodec.Decoded,
+	final: { PoolPhysics.BallState },
+	hype: Remotes.HypePayload?
+): Playback
 	local frameDt = 1 / decoded.recordHz
 	local tracks: { [number]: Track } = {}
 	for _, frame in decoded.frames do
@@ -184,6 +193,8 @@ local function buildPlayback(view: View, decoded: TrajectoryCodec.Decoded, final
 	local last = decoded.frames[#decoded.frames]
 	return {
 		t = 0,
+		timeScale = 1,
+		hype = hype,
 		duration = if last then last.t else 0,
 		frameDt = frameDt,
 		tracks = tracks,
@@ -218,7 +229,7 @@ local function playEvent(view: View, event: PoolPhysics.Event)
 end
 
 local function step(view: View, playback: Playback, dt: number)
-	playback.t += dt
+	playback.t += dt * playback.timeScale
 	local t = playback.t
 	for id, track in playback.tracks do
 		local part = view.parts[id]
@@ -334,7 +345,7 @@ local function onShotResult(message: Remotes.ShotResultPayload)
 		return
 	end
 	finish(view)
-	view.playback = buildPlayback(view, TrajectoryCodec.decode(message.trajectory), message.balls)
+	view.playback = buildPlayback(view, TrajectoryCodec.decode(message.trajectory), message.balls, message.hype)
 	TableViewController.ShotStarted:Fire(view.id)
 end
 
@@ -361,6 +372,10 @@ function TableViewController.moveBall(view: View, id: number, x: number, y: numb
 			end
 		end
 	end
+end
+
+function TableViewController.view(tableId: string): View?
+	return views[tableId]
 end
 
 function TableViewController.seatedView(): View?

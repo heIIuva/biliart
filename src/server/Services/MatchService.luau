@@ -5,19 +5,27 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local BotPlanner = require(Shared.Pool.BotPlanner)
+local Hype = require(Shared.Config.Hype)
 local PoolPhysics = require(Shared.Pool.PoolPhysics)
 local PoolRules = require(Shared.Pool.PoolRules)
 local Rack = require(Shared.Pool.Rack)
 local RateLimiter = require(Shared.Util.RateLimiter)
 local Remotes = require(Shared.Net.Remotes)
 local Rules = require(Shared.Config.Rules)
+local ShotClassifier = require(Shared.Pool.ShotClassifier)
+local ShotReport = require(Shared.Pool.ShotReport)
+local TitleScenarios = require(Shared.Pool.TitleScenarios)
 local TrajectoryCodec = require(Shared.Pool.TrajectoryCodec)
+local Tutorial = require(Shared.Config.Tutorial)
 local Validate = require(Shared.Util.Validate)
+local AnalyticsService = require(script.Parent.AnalyticsService)
 local BotService = require(script.Parent.BotService)
+local HypeService = require(script.Parent.HypeService)
 local TableService = require(script.Parent.TableService)
 
 local PLAYBACK_GRACE = 0.6 -- seconds after a trajectory ends before the next turn starts
@@ -45,6 +53,11 @@ type Match = {
 	started: boolean, -- the first shot was taken
 	reasonKey: string?,
 	winner: number?,
+	-- The current visit (consecutive shots of one player):
+	visitOwnPots: number,
+	turnStreak: number,
+	combo: number, -- titles in a row
+	tutorial: boolean, -- the first break is rigged to give TIGER
 }
 
 local matches: { [string]: Match } = {}
@@ -177,6 +190,14 @@ function playShot(
 	cueBallPos: { x: number, y: number }?
 )
 	local entry = match.entry
+	local shooterSeat = match.seats[match.rules.current]
+	local shooter = shooterSeat.player
+	if match.tutorial and match.rules.isBreak and shooter and shot.power >= Tutorial.MinPower then
+		-- Rigged first break: whatever the newcomer does, it is a TIGER.
+		shot = table.clone(Tutorial.BreakShot)
+		cueBallPos = { x = Tutorial.CueX, y = Tutorial.CueY }
+		match.tutorial = false
+	end
 	local balls = table.clone(entry.balls)
 	if cueBallPos then
 		for i, b in balls do
@@ -197,7 +218,48 @@ function playShot(
 	match.busy = true
 	match.started = true
 	local sim = PoolPhysics.simulateShot({ geometry = entry.geometry, balls = balls }, shot)
-	local outcome = PoolRules.evaluate(match.rules, match.variant, sim, { calledPocket = calledPocket })
+	local before = match.rules
+	local outcome = PoolRules.evaluate(before, match.variant, sim, { calledPocket = calledPocket })
+	local report = ShotReport.build({
+		sim = sim,
+		shot = shot,
+		before = before,
+		outcome = outcome,
+		ballsBefore = balls,
+		geometry = entry.geometry,
+		visitOwnPots = match.visitOwnPots,
+		turnStreak = match.turnStreak + 1,
+	})
+	local title = ShotClassifier.classify(report)
+	HypeService.recordShot(if title then title.id else nil)
+	local hype: Remotes.HypePayload? = nil
+	if title then
+		match.combo = if title.kind == "Title" then math.min(match.combo + 1, Hype.MaxCombo) else 0
+		hype = {
+			titleId = title.id,
+			combo = math.max(match.combo, 1),
+			rarity = HypeService.rarity(title.id),
+			playerName = shooterSeat.name,
+		}
+		if shooter then
+			HypeService.announce(shooter.DisplayName, title)
+			if title.id == "TIGER" then
+				AnalyticsService.funnel(shooter, AnalyticsService.Funnel.FirstTiger, "FirstTiger")
+			end
+			AnalyticsService.custom(shooter, `Title_{title.id}`)
+		end
+	else
+		match.combo = 0
+	end
+	if shooter then
+		AnalyticsService.funnel(shooter, AnalyticsService.Funnel.FirstShot, "FirstShot")
+	end
+	if outcome.nextPlayer == before.current and not outcome.gameOver then
+		match.visitOwnPots += report.pottedOwn
+		match.turnStreak += 1
+	else
+		match.visitOwnPots, match.turnStreak, match.combo = 0, 0, 0
+	end
 	local final = sim.finalState
 	local eight = findBall(final, 8)
 	if outcome.respotEight and eight then
@@ -208,6 +270,7 @@ function playShot(
 		tableId = entry.id,
 		trajectory = TrajectoryCodec.encode(sim),
 		balls = final,
+		hype = hype,
 	}
 	-- ponytail: every client gets every table's shots; limit to nearby players when tables multiply (phase 7).
 	Remotes.Event("ShotResult"):FireAllClients(message)
@@ -217,12 +280,17 @@ function playShot(
 	match.kitchenOnly = false
 	match.reasonKey = outcome.reasonKey
 	local turn = match.turn
-	task.delay(sim.duration + PLAYBACK_GRACE, function()
+	local splash = if hype then math.min(Hype.SplashSeconds, Hype.MaxSplashWait) else 0
+	task.delay(sim.duration + PLAYBACK_GRACE + splash, function()
 		if matches[entry.id] ~= match or match.turn ~= turn then
 			return
 		end
 		match.busy = false
 		if outcome.gameOver then
+			local human = match.seats[1].player
+			if human then
+				AnalyticsService.funnel(human, AnalyticsService.Funnel.MatchFinished, "MatchFinished")
+			end
 			finish(match, outcome.winner :: number, outcome.reasonKey)
 		else
 			startTurn(match)
@@ -265,17 +333,16 @@ local function onShot(player: Player, payload: unknown)
 	playShot(match, shot, calledPocket, cueBallPos)
 end
 
-local function onStart(player: Player, payload: unknown)
-	local level = Validate.botLevel(payload)
-	local entry = TableService.tableOf(player)
-	if not startLimiter:Allow(player) or not level or not entry then
-		return
-	end
+local function startMatch(player: Player, entry: TableService.Entry, level: string, tutorial: boolean)
 	local existing = matches[entry.id]
 	if existing and existing.phase == "Playing" then
 		return
 	end
-	TableService.rack(entry)
+	if tutorial then
+		TableService.setBalls(entry, Rack.eightBall(entry.geometry, Tutorial.RackSeed), true)
+	else
+		TableService.rack(entry)
+	end
 	local variant = Rules.Variants[entry.variant]
 	local match: Match = {
 		entry = entry,
@@ -294,9 +361,51 @@ local function onStart(player: Player, payload: unknown)
 		started = false,
 		reasonKey = nil,
 		winner = nil,
+		visitOwnPots = 0,
+		turnStreak = 0,
+		combo = 0,
+		tutorial = tutorial,
 	}
 	matches[entry.id] = match
 	startTurn(match)
+end
+
+local function onStart(player: Player, payload: unknown)
+	local level = Validate.botLevel(payload)
+	local entry = TableService.tableOf(player)
+	if startLimiter:Allow(player) and level and entry then
+		startMatch(player, entry, level, false)
+	end
+end
+
+local function onTutorial(player: Player)
+	if not startLimiter:Allow(player) then
+		return
+	end
+	local entry = TableService.tableOf(player) or TableService.get(Tutorial.TableId)
+	if entry and (TableService.tableOf(player) == entry or TableService.seat(player, entry)) then
+		startMatch(player, entry, Tutorial.BotLevel, true)
+	end
+end
+
+-- Studio only: lay out the scenario of a title on the player's table and play its known shot.
+local function onDebug(player: Player, payload: unknown)
+	if not RunService:IsStudio() or type(payload) ~= "table" then
+		return
+	end
+	local raw = payload :: { [unknown]: unknown }
+	local entry = TableService.tableOf(player)
+	local match = if entry then matches[entry.id] else nil
+	local scenario = if type(raw.id) == "string" then TitleScenarios.all()[raw.id] else nil
+	if not entry or not match or not scenario or not scenario.shot or match.busy or entry.variant ~= "Standard" then
+		return
+	end
+	TableService.setBalls(entry, scenario.balls, true)
+	match.rules = { current = 1, groups = scenario.rules.groups, isBreak = scenario.rules.isBreak }
+	match.visitOwnPots = scenario.visitOwnPots
+	match.phase = "Playing"
+	match.turn += 1
+	task.delay(1, playShot, match, scenario.shot, scenario.calledPocket, nil)
 end
 
 local function onUnseated(_player: Player, entry: TableService.Entry)
@@ -317,7 +426,10 @@ local MatchService = {}
 function MatchService.Start()
 	Remotes.Event("Shot").OnServerEvent:Connect(onShot)
 	Remotes.Event("StartMatch").OnServerEvent:Connect(onStart)
-	TableService.Seated:Connect(function(_, entry)
+	Remotes.Event("StartTutorial").OnServerEvent:Connect(onTutorial)
+	Remotes.Event("Debug").OnServerEvent:Connect(onDebug)
+	TableService.Seated:Connect(function(player, entry)
+		AnalyticsService.funnel(player, AnalyticsService.Funnel.SatAtTable, "SatAtTable")
 		broadcast(entry)
 	end)
 	TableService.Unseated:Connect(onUnseated)

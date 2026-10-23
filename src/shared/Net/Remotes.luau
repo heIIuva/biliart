@@ -27,11 +27,27 @@ export type TableSnapshot = {
 	balls: { PoolPhysics.BallState },
 }
 
+-- The title a shot earned, for the splash.
+export type HypePayload = {
+	titleId: string,
+	combo: number, -- titles in a row this visit (1 = first)
+	rarity: number?, -- percent of all shots, nil while there is too little data
+	playerName: string,
+}
+
 -- Server -> clients after a shot: play `trajectory` (TrajectoryCodec), then snap to `balls`.
 export type ShotResultPayload = {
 	tableId: string,
 	trajectory: buffer,
 	balls: { PoolPhysics.BallState },
+	hype: HypePayload?,
+}
+
+-- Server -> clients: a rare title somewhere on this server (or another one).
+export type Announcement = {
+	playerName: string,
+	titleId: string,
+	crossServer: boolean,
 }
 
 export type MatchPlayer = {
@@ -65,6 +81,9 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	SeatChanged = "RemoteEvent", -- server -> client: tableId or nil
 	LeaveTable = "RemoteEvent", -- client -> server: no payload
 	StartMatch = "RemoteEvent", -- client -> server: bot level "Easy" | "Medium" | "Hard"
+	StartTutorial = "RemoteEvent", -- client -> server: no payload
+	Announcement = "RemoteEvent", -- server -> clients: Announcement
+	Debug = "RemoteEvent", -- client -> server, Studio only: { action = "title", id = titleId }
 }
 
 local FOLDER_NAME = "Remotes"
