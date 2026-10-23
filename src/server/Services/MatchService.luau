@@ -10,6 +10,11 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local BotPlanner = require(Shared.Pool.BotPlanner)
+local Chaos = require(Shared.Config.Chaos)
+local ChaosEffects = require(Shared.Pool.Chaos)
+local TableGeometry = require(Shared.Pool.TableGeometry)
+local TrickConfig = require(Shared.Config.Tricks)
+local Tricks = require(Shared.Pool.Tricks)
 local Hype = require(Shared.Config.Hype)
 local PoolPhysics = require(Shared.Pool.PoolPhysics)
 local PoolRules = require(Shared.Pool.PoolRules)
@@ -55,7 +60,17 @@ type Seat = {
 	cue: Cues.Cue, -- stats used this match (base in ranked and the tutorial)
 }
 
-export type Mode = "Bot" | "Casual" | "Ranked" | "King"
+export type Mode = "Bot" | "Casual" | "Ranked" | "King" | "Chaos" | "Trick" | "Sandbox"
+
+-- Chaos mode state (golden balls, one-shot bonuses, Tiger meter) by seat index.
+type ChaosState = {
+	golden: { number },
+	meter: { number },
+	armed: { boolean },
+	selfBonus: { [number]: string },
+	againstBonus: { [number]: string },
+	note: string?, -- last bonus handed out (localization key), shown as a toast
+}
 
 type Match = {
 	entry: TableService.Entry,
@@ -77,12 +92,19 @@ type Match = {
 	turnStreak: number,
 	combo: number, -- titles in a row
 	tutorial: boolean, -- the first break is rigged to give TIGER
+	chaos: ChaosState?,
+	trick: TrickConfig.Trick?,
 }
 
 local matches: { [string]: Match } = {}
 -- Players waiting for a human opponent, seated at their own table.
 local queued: { [Player]: { mode: Mode, entry: TableService.Entry, since: number } } = {}
 local lastMatchCoins: { [Player]: number } = {} -- for the "x2 match reward" rewarded ad
+local random = Random.new()
+local function roll(): number
+	return random:NextNumber()
+end
+local FREE_MODES = { Sandbox = true, Trick = true } -- no rules, no timer, no rewards
 local shotLimiter = RateLimiter.new(1, 2)
 local startLimiter = RateLimiter.new(0.5, 2)
 
@@ -126,6 +148,18 @@ local function snapshot(entry: TableService.Entry): Remotes.MatchSnapshot
 		turnEndsAt = match.turnEndsAt,
 		reasonKey = match.reasonKey,
 		winner = match.winner,
+		chaos = if match.chaos
+			then {
+				golden = match.chaos.golden,
+				meter = match.chaos.meter,
+				armed = match.chaos.armed,
+				fog = match.chaos.againstBonus[match.rules.current] == "Fog",
+				note = match.chaos.note,
+			}
+			else nil,
+		trick = if match.trick
+			then { id = match.trick.id, nameKey = match.trick.nameKey, target = match.trick.target }
+			else nil,
 	}
 end
 
@@ -151,11 +185,76 @@ local MatchService = {
 	Finished = Signal.new(), -- (entry, mode, winner: Player?, loser: Player?)
 }
 
-local playShot: (Match, PoolPhysics.ShotParams, number?, { x: number, y: number }?) -> ()
+-- Sandbox: move any ball, re-rack or clear the table. { action = "place", id, x, y } | "rerack" | "clear"
+local sandboxLimiter = RateLimiter.new(8, 16)
+local function onSandbox(player: Player, payload: unknown)
+	local entry, index = TableService.tableOf(player)
+	local match = if entry then matches[entry.id] else nil
+	if
+		not sandboxLimiter:Allow(player)
+		or not entry
+		or not match
+		or match.mode ~= "Sandbox"
+		or index ~= 1
+		or match.busy
+	then
+		return
+	end
+	if type(payload) ~= "table" then
+		return
+	end
+	local raw = payload :: { [unknown]: unknown }
+	local balls = table.clone(entry.balls)
+	if raw.action == "rerack" then
+		TableService.rack(entry)
+		return
+	elseif raw.action == "clear" then
+		for i, b in balls do
+			if b.id ~= 0 then
+				balls[i] = { id = b.id, x = b.x, y = b.y, status = "Pocketed" }
+			end
+		end
+	elseif raw.action == "place" then
+		local id, point = Validate.finite(raw.id), Validate.point(raw)
+		if not id or not point then
+			return
+		end
+		local R = entry.geometry.ballRadius
+		if math.abs(point.x) > entry.geometry.halfLength - R or math.abs(point.y) > entry.geometry.halfWidth - R then
+			return
+		end
+		for i, b in balls do
+			if b.id ~= id and b.status == "Stationary" and (b.x - point.x) ^ 2 + (b.y - point.y) ^ 2 < (2 * R) ^ 2 then
+				return
+			end
+			if b.id == id then
+				balls[i] = {
+					id = b.id,
+					x = point.x,
+					y = point.y,
+					status = "Stationary",
+					qx = b.qx,
+					qy = b.qy,
+					qz = b.qz,
+					qw = b.qw,
+				}
+			end
+		end
+	else
+		return
+	end
+	TableService.setBalls(entry, balls, true)
+end
+
+local playShot: (Match, PoolPhysics.ShotParams, number?, { x: number, y: number }?, boolean?) -> ()
 local startTurn: (Match) -> ()
+local refreshTrick: (Progression.PlayerData) -> ()
 
 -- Pays and records the match for every human seat. A player who left gets the loss only.
 local function award(match: Match, winner: number, leaver: number?)
+	if FREE_MODES[match.mode] then
+		return
+	end
 	for index, seat in match.seats do
 		local player = seat.player
 		local data = if player then DataService.get(player) else nil
@@ -273,7 +372,7 @@ function startTurn(match: Match)
 		TableService.setBalls(entry, entry.balls, true)
 	end
 	local seat = match.seats[match.rules.current]
-	local seconds = turnSeconds(seat)
+	local seconds = if FREE_MODES[match.mode] then 3600 else turnSeconds(seat)
 	match.turnEndsAt = Workspace:GetServerTimeNow() + seconds
 	broadcast(entry)
 
@@ -299,16 +398,96 @@ function startTurn(match: Match)
 			end
 			playShot(match, plan.shot, plan.calledPocket, pos)
 		end)
-	else
+	elseif not FREE_MODES[match.mode] then
 		task.delay(seconds, onTimeout, match, turn)
 	end
+end
+
+-- Chaos: bonuses that change this shot (consumed now).
+local function chaosBefore(
+	match: Match,
+	balls: { PoolPhysics.BallState },
+	superShot: boolean
+): (TableGeometry.Geometry, PoolPhysics.Params?, { PoolPhysics.BallState }, boolean)
+	local entry, chaos = match.entry, match.chaos :: ChaosState
+	local current = match.rules.current
+	local own, against = chaos.selfBonus[current], chaos.againstBonus[current]
+	chaos.selfBonus[current], chaos.againstBonus[current] = nil, nil
+	local useSuper = superShot and chaos.armed[current]
+	if useSuper then
+		chaos.armed[current], chaos.meter[current] = false, 0
+	end
+	local geometry = entry.geometry
+	if against == "NarrowPockets" and entry.variant == "Standard" then
+		geometry = TableGeometry.get("Chinese8")
+	end
+	if own == "Earthquake" then
+		balls = ChaosEffects.earthquake(geometry, balls, roll)
+	end
+	local params = if own == "MoonJump" or useSuper then ChaosEffects.params(own == "MoonJump", useSuper) else nil
+	return geometry, params, balls, useSuper
+end
+
+-- Chaos after the shot: golden balls hand out bonuses, titles fill the Tiger meter.
+local function chaosAfter(
+	match: Match,
+	sim: PoolPhysics.SimResult,
+	outcome: PoolRules.RulesResult,
+	title: Titles.Title?
+)
+	local chaos = match.chaos :: ChaosState
+	local current = match.rules.current
+	chaos.note = nil
+	if not outcome.foul then
+		for _, e in sim.events do
+			if e.kind == PoolPhysics.EventKind.Pocketed and table.find(chaos.golden, e.a) then
+				table.remove(chaos.golden, table.find(chaos.golden, e.a) :: number)
+				local bonus = ChaosEffects.pickBonus(roll)
+				if bonus.target == "Self" then
+					chaos.selfBonus[current] = bonus.id
+				else
+					chaos.againstBonus[3 - current] = bonus.id
+				end
+				chaos.note = bonus.nameKey
+			end
+		end
+	end
+	if title and title.kind == "Title" and not chaos.armed[current] then
+		chaos.meter[current] = math.min(1, chaos.meter[current] + Chaos.MeterPerTitle)
+		chaos.armed[current] = chaos.meter[current] >= 1
+	end
+end
+
+-- Trick of the week: count the attempt, reward the first solve of the week.
+local function trickAfter(match: Match, sim: PoolPhysics.SimResult)
+	local trick = match.trick :: TrickConfig.Trick
+	local player = match.seats[1].player
+	local data = if player then DataService.get(player) else nil
+	if not player or not data then
+		return
+	end
+	local state = data.trick
+	state.attempts += 1
+	if Tricks.solved(trick, sim) then
+		match.reasonKey = "TRICK_SOLVED"
+		if not state.solved then
+			state.solved = true
+			DataService.addCurrency(player, "coins", TrickConfig.FirstSolveCoins, "Gameplay", `Trick_{trick.id}`)
+			DataService.notify(player, "NOTIFY_COINS", { amount = TrickConfig.FirstSolveCoins })
+			LeaderboardService.submit("Trick", player, state.totalAttempts + state.attempts)
+		end
+	else
+		match.reasonKey = "TRICK_MISS"
+	end
+	DataService.changed(player)
 end
 
 function playShot(
 	match: Match,
 	shot: PoolPhysics.ShotParams,
 	calledPocket: number?,
-	cueBallPos: { x: number, y: number }?
+	cueBallPos: { x: number, y: number }?,
+	superShot: boolean?
 )
 	local entry = match.entry
 	local shooterSeat = match.seats[match.rules.current]
@@ -346,10 +525,34 @@ function playShot(
 	end
 	match.busy = true
 	match.started = true
-	local sim = PoolPhysics.simulateShot({ geometry = entry.geometry, balls = balls }, shot)
+	local geometry, params, useSuper = entry.geometry, nil, false
+	if match.chaos then
+		geometry, params, balls, useSuper = chaosBefore(match, balls, superShot == true)
+	end
+	local sim = PoolPhysics.simulateShot({ geometry = geometry, balls = balls }, shot, { params = params })
 	local before = match.rules
-	local outcome = PoolRules.evaluate(before, match.variant, sim, { calledPocket = calledPocket })
+	local glitched = false
+	if match.chaos and roll() < Chaos.GlitchChance then
+		glitched = ChaosEffects.glitch(sim, before.groups[before.current], roll) ~= nil
+	end
+	local outcome: PoolRules.RulesResult
+	if FREE_MODES[match.mode] then
+		outcome = {
+			foul = nil,
+			nextPlayer = before.current,
+			ballInHand = false,
+			groups = before.groups,
+			gameOver = false,
+			winner = nil,
+			respotEight = false,
+			reasonKey = "",
+		}
+	else
+		outcome = PoolRules.evaluate(before, match.variant, sim, { calledPocket = calledPocket })
+	end
 	local report = ShotReport.build({
+		glitched = glitched,
+		allOwn = match.mode == "Sandbox",
 		sim = sim,
 		shot = shot,
 		before = before,
@@ -360,6 +563,12 @@ function playShot(
 		turnStreak = match.turnStreak + 1,
 	})
 	local title = ShotClassifier.classify(report)
+	if useSuper then
+		title = ShotClassifier.byId("TIGER") -- the Tiger super shot always gets its splash
+	end
+	if match.chaos then
+		chaosAfter(match, sim, outcome, title)
+	end
 	HypeService.recordShot(if title then title.id else nil)
 	local hype: Remotes.HypePayload? = nil
 	if title then
@@ -382,7 +591,9 @@ function playShot(
 	end
 	if shooter then
 		AnalyticsService.funnel(shooter, AnalyticsService.Funnel.FirstShot, "FirstShot")
-		progressShot(shooter, shot, report, title, match.mode == "Ranked")
+		if not FREE_MODES[match.mode] then
+			progressShot(shooter, shot, report, title, match.mode == "Ranked")
+		end
 	end
 	if outcome.nextPlayer == before.current and not outcome.gameOver then
 		match.visitOwnPots += report.pottedOwn
@@ -408,7 +619,10 @@ function playShot(
 	match.rules = { current = outcome.nextPlayer, groups = outcome.groups, isBreak = false }
 	match.ballInHand = outcome.ballInHand
 	match.kitchenOnly = false
-	match.reasonKey = outcome.reasonKey
+	match.reasonKey = if FREE_MODES[match.mode] then nil else outcome.reasonKey
+	if match.trick then
+		trickAfter(match, sim)
+	end
 	local turn = match.turn
 	local splash = if hype then math.min(Hype.SplashSeconds, Hype.MaxSplashWait) else 0
 	task.delay(sim.duration + PLAYBACK_GRACE + splash, function()
@@ -416,6 +630,17 @@ function playShot(
 			return
 		end
 		match.busy = false
+		local trick = match.trick
+		if trick then
+			-- Every attempt starts from the trick layout; out of tries ends the session.
+			local player = match.seats[1].player
+			local data = if player then DataService.get(player) else nil
+			if not data or data.trick.attempts >= data.trick.limit then
+				finish(match, 2, "TRICK_OUT_OF_TRIES")
+				return
+			end
+			TableService.setBalls(entry, Tricks.layout(trick), true)
+		end
 		if outcome.gameOver then
 			finish(match, outcome.winner :: number, outcome.reasonKey)
 		else
@@ -456,7 +681,7 @@ local function onShot(player: Player, payload: unknown)
 		end
 		cueBallPos = point
 	end
-	playShot(match, shot, calledPocket, cueBallPos)
+	playShot(match, shot, calledPocket, cueBallPos, raw.superShot == true)
 end
 
 local function humanSeat(player: Player, baseCue: boolean): Seat
@@ -486,22 +711,26 @@ local function startMatch(entry: TableService.Entry, seats: { Seat }, mode: Mode
 	if existing and existing.phase == "Playing" then
 		return
 	end
-	if tutorial then
+	local trick = if mode == "Trick" then Tricks.forTime(os.time()) else nil
+	if trick then
+		TableService.setBalls(entry, Tricks.layout(trick), true)
+	elseif tutorial then
 		TableService.setBalls(entry, Rack.eightBall(entry.geometry, Tutorial.RackSeed), true)
 	else
 		TableService.rack(entry)
 	end
 	local variant = Rules.Variants[entry.variant]
-	local breaker = if mode == "Bot" then 1 else math.random(1, 2)
+	local breaker = if mode == "Bot" or mode == "Chaos" or FREE_MODES[mode] then 1 else math.random(1, 2)
+	local free = FREE_MODES[mode] == true
 	local match: Match = {
 		entry = entry,
 		mode = mode,
 		seats = seats,
-		rules = { current = breaker, groups = {}, isBreak = true },
+		rules = { current = breaker, groups = {}, isBreak = not free },
 		variant = variant,
 		phase = "Playing",
-		ballInHand = true,
-		kitchenOnly = variant.BreakFromKitchen,
+		ballInHand = not free,
+		kitchenOnly = variant.BreakFromKitchen and not free,
 		turn = 0,
 		turnEndsAt = 0,
 		busy = false,
@@ -512,6 +741,17 @@ local function startMatch(entry: TableService.Entry, seats: { Seat }, mode: Mode
 		turnStreak = 0,
 		combo = 0,
 		tutorial = tutorial,
+		chaos = if mode == "Chaos"
+			then {
+				golden = ChaosEffects.pickGolden(entry.balls, Chaos.GoldenBalls, roll),
+				meter = { 0, 0 },
+				armed = { false, false },
+				selfBonus = {},
+				againstBonus = {},
+				note = nil,
+			}
+			else nil,
+		trick = trick,
 	}
 	matches[entry.id] = match
 	startTurn(match)
@@ -538,6 +778,20 @@ end
 function MatchService.isPlaying(entry: TableService.Entry): boolean
 	local match = matches[entry.id]
 	return match ~= nil and match.phase == "Playing"
+end
+
+-- Trick of the week attempts reset every UTC day; the week's solve state resets every week.
+function refreshTrick(data: Progression.PlayerData)
+	local state = data.trick
+	local now = os.time()
+	local week, day = Progression.weekIndex(now), Progression.dayIndex(now)
+	if state.week ~= week then
+		state.week, state.solved, state.totalAttempts = week, false, 0
+	end
+	if state.day ~= day then
+		state.totalAttempts += state.attempts
+		state.day, state.attempts, state.limit = day, 0, TrickConfig.DailyAttempts
+	end
 end
 
 local function leaveQueue(player: Player)
@@ -590,6 +844,20 @@ local function onStart(player: Player, payload: unknown)
 		startMatch(entry, { humanSeat(player, false), botSeat(level) }, "Bot", false)
 	elseif payload == "Casual" or payload == "Ranked" then
 		enqueue(player, entry, payload)
+	elseif payload == "Chaos" then
+		startMatch(entry, { humanSeat(player, false), botSeat(Chaos.BotLevel) }, "Chaos", false)
+	elseif payload == "Sandbox" then
+		startMatch(entry, { humanSeat(player, false), botSeat("Easy") }, "Sandbox", false)
+	elseif payload == "Trick" then
+		local data = DataService.get(player)
+		if data and entry.variant == "Standard" then
+			refreshTrick(data)
+			if data.trick.attempts < data.trick.limit then
+				startMatch(entry, { humanSeat(player, true), botSeat("Easy") }, "Trick", false)
+			else
+				DataService.notify(player, "TRICK_OUT_OF_TRIES")
+			end
+		end
 	end
 end
 
@@ -655,6 +923,15 @@ function MatchService.Start()
 		broadcast(entry)
 	end)
 	TableService.Unseated:Connect(onUnseated)
+	ShopService.onAdReward("TrickRetry", function(player)
+		local data = DataService.get(player)
+		if data then
+			refreshTrick(data)
+			data.trick.limit += 1
+			DataService.changed(player)
+		end
+	end)
+	Remotes.Event("Sandbox").OnServerEvent:Connect(onSandbox)
 	ShopService.onAdReward("MatchX2", function(player)
 		local coins = lastMatchCoins[player]
 		if coins and coins > 0 then

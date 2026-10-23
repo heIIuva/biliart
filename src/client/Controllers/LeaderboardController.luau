@@ -16,6 +16,7 @@ local TITLE_KEYS = {
 	ShotOfDay = "BOARD_SHOT_OF_DAY",
 	Dojo = "BOARD_DOJO",
 	Rating = "BOARD_RATING",
+	Trick = "BOARD_TRICK",
 }
 
 local latest: { [string]: { Remotes.LeaderboardRow } } = {}

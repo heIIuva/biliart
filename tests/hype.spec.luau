@@ -16,6 +16,9 @@ return {
 	["every title has a scenario whose stored shot earns it"] = function()
 		local scenarios = TitleScenarios.all()
 		for _, title in Titles do
+			if title.kind == "Glitch" then
+				continue -- random chaos events, covered by chaos.spec
+			end
 			local scenario = scenarios[title.id]
 			assert(scenario, `no scenario for {title.id}`)
 			local shot = scenario.shot

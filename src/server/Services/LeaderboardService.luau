@@ -15,14 +15,16 @@ local Remotes = require(Shared.Net.Remotes)
 local REFRESH_SECONDS = 90
 local TOP = 10
 
-export type BoardId = "Wins" | "Rating" | "Dojo" | "ShotOfDay"
+export type BoardId = "Wins" | "Rating" | "Dojo" | "ShotOfDay" | "Trick"
 
-local BOARDS: { BoardId } = { "Wins", "ShotOfDay", "Dojo", "Rating" }
+local BOARDS: { BoardId } = { "Wins", "ShotOfDay", "Dojo", "Rating", "Trick" }
+local ASCENDING: { [string]: boolean } = { Trick = true } -- fewest attempts first
 local POSITIONS = { -- lobby, facing the spawn
 	Wins = Vector3.new(-18, 0, 14),
 	ShotOfDay = Vector3.new(-6, 0, 20),
 	Dojo = Vector3.new(6, 0, 20),
 	Rating = Vector3.new(18, 0, 14),
+	Trick = Vector3.new(28, 0, 2),
 }
 
 local names: { [number]: string } = {}
@@ -31,6 +33,8 @@ local latest: { [string]: { Remotes.LeaderboardRow } } = {}
 local function storeName(board: BoardId): string
 	if board == "ShotOfDay" then
 		return `LB_ShotOfDay_{Progression.dayIndex(os.time())}`
+	elseif board == "Trick" then
+		return `LB_Trick_{Progression.weekIndex(os.time())}`
 	end
 	return `LB_{board}`
 end
@@ -69,7 +73,7 @@ end
 local function refresh()
 	for _, board: BoardId in BOARDS do
 		local ok, pages = pcall(function()
-			return DataStoreService:GetOrderedDataStore(storeName(board)):GetSortedAsync(false, TOP)
+			return DataStoreService:GetOrderedDataStore(storeName(board)):GetSortedAsync(ASCENDING[board] == true, TOP)
 		end)
 		if ok and pages then
 			local rows: { Remotes.LeaderboardRow } = {}

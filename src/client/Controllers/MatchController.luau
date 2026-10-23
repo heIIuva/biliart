@@ -22,8 +22,11 @@ local player = Players.LocalPlayer
 local snapshots: { [string]: Remotes.MatchSnapshot } = {}
 local shown: Remotes.MatchSnapshot? = nil -- what the HUD displays for the seated table
 local lastLevel = "Medium"
+local superOn = false
+local restoreGui: ScreenGui? = nil
 local turnTotal = 1 -- seconds the current turn had when it was shown
 local hud: MatchHud.Hud
+local setUiHidden: (boolean) -> ()
 
 local MatchController = {}
 
@@ -49,6 +52,15 @@ function MatchController.canShoot(): boolean
 		and Workspace:GetServerTimeNow() < snapshot.turnEndsAt
 end
 
+-- Chaos: the next shot is the Tiger super shot (armed and toggled on).
+function MatchController.superShot(): boolean
+	return superOn
+end
+
+function MatchController.shotSent()
+	superOn = false
+end
+
 function MatchController.flash(key: string)
 	hud.toast(key)
 end
@@ -64,6 +76,46 @@ local function playerLine(snapshot: Remotes.MatchSnapshot, index: number): Match
 		groupKey = if group then GROUP_KEYS[group] else (if snapshot.isBreak then nil else "GROUP_OPEN"),
 		active = snapshot.phase == "Playing" and snapshot.current == index,
 	}
+end
+
+-- Sandbox "hide UI": every screen goes away except one small button that brings them back.
+local hiddenGuis: { ScreenGui } = {}
+function setUiHidden(hidden: boolean)
+	local playerGui = player:WaitForChild("PlayerGui")
+	if hidden then
+		for _, gui in playerGui:GetChildren() do
+			if gui:IsA("ScreenGui") and gui.Enabled and gui ~= restoreGui then
+				gui.Enabled = false
+				table.insert(hiddenGuis, gui)
+			end
+		end
+		if not restoreGui then
+			local gui = Instance.new("ScreenGui")
+			gui.Name = "ShowUi"
+			gui.ResetOnSpawn = false
+			local b = Instance.new("TextButton")
+			b.Size = UDim2.fromOffset(44, 44)
+			b.Position = UDim2.new(0, 8, 1, -52)
+			b.Text = "👁"
+			b.TextScaled = true
+			b.BackgroundTransparency = 0.6
+			b.Parent = gui
+			b.Activated:Connect(function()
+				setUiHidden(false)
+			end)
+			gui.Parent = playerGui
+			restoreGui = gui
+		end
+		(restoreGui :: ScreenGui).Enabled = true
+	else
+		for _, gui in hiddenGuis do
+			gui.Enabled = true
+		end
+		table.clear(hiddenGuis)
+		if restoreGui then
+			restoreGui.Enabled = false
+		end
+	end
 end
 
 local function render()
@@ -91,14 +143,30 @@ local function render()
 		return
 	end
 	local me = myIndex(snapshot) or 1
-	hud.showStatus(playerLine(snapshot, me), playerLine(snapshot, 3 - me))
+	hud.showStatus(playerLine(snapshot, me), playerLine(snapshot, if snapshot.players[2] then 3 - me else me))
+	local chaos = snapshot.chaos
+	if chaos then
+		superOn = superOn and chaos.armed[me]
+		hud.setChaos(chaos.meter[me], chaos.armed[me], superOn)
+		TableViewController.setHighlights(view, chaos.golden)
+		TableViewController.setFog(view, chaos.fog and snapshot.current == me and phase == "Playing")
+	else
+		hud.setChaos(nil, false, false)
+		TableViewController.setHighlights(view, {})
+		TableViewController.setFog(view, false)
+	end
+	hud.setSandbox(snapshot.mode == "Sandbox" and phase == "Playing")
 
 	if phase == "Over" then
 		hud.setHint(nil)
+		hud.setSandbox(false)
 		local wasShown = previous ~= nil and previous.phase == "Over"
 		hud.showResult(if snapshot.winner == me then "MATCH_YOU_WIN" else "MATCH_YOU_LOSE", snapshot.reasonKey)
 		if not wasShown then
-			AdController.whenAvailable("MatchX2", hud.resultAdButton, function()
+			local placement = if snapshot.mode == "Trick" then "TrickRetry" else "MatchX2"
+			hud.resultAdButton.Text = Text.get(if placement == "TrickRetry" then "AD_TRICK_RETRY" else "AD_MATCH_X2")
+			hud.resultAdButton:SetAttribute("Placement", placement)
+			AdController.whenAvailable(placement, hud.resultAdButton, function()
 				hud.resultAdButton.Visible = true
 			end)
 		end
@@ -107,10 +175,14 @@ local function render()
 	hud.showResult(nil, nil)
 
 	local mine = snapshot.current == me
-	local hint
+	local hint: string? = nil
 	if not mine then
 		local opponent = snapshot.players[snapshot.current]
 		hint = if opponent and opponent.isBot then "MATCH_BOT_THINKING" else "MATCH_OPPONENT_TURN"
+	elseif snapshot.mode == "Sandbox" then
+		hint = "SANDBOX_HINT"
+	elseif snapshot.trick then
+		hint = nil -- the goal text is set below
 	elseif snapshot.isBreak then
 		hint = "HINT_BREAK"
 	elseif snapshot.mustCall then
@@ -121,6 +193,10 @@ local function render()
 		hint = "MATCH_YOUR_TURN"
 	end
 	hud.setHint(hint)
+	local trick = snapshot.trick
+	if trick and mine then
+		hud.setHintText(Text.format("TRICK_GOAL", { name = Text.get(trick.nameKey), target = trick.target }))
+	end
 
 	-- A new turn: announce what the last shot did.
 	local newTurn = not previous or previous.turnEndsAt ~= snapshot.turnEndsAt
@@ -128,6 +204,9 @@ local function render()
 		turnTotal = math.max(1, snapshot.turnEndsAt - Workspace:GetServerTimeNow())
 		if snapshot.reasonKey then
 			hud.toast(snapshot.reasonKey)
+		end
+		if chaos and chaos.note then
+			task.delay(1.2, hud.toast, chaos.note)
 		end
 	end
 end
@@ -148,7 +227,21 @@ function MatchController.Init()
 		end,
 		onAd = function()
 			hud.resultAdButton.Visible = false
-			AdController.request("MatchX2")
+			local placement = hud.resultAdButton:GetAttribute("Placement")
+			AdController.request(if type(placement) == "string" then placement else "MatchX2")
+		end,
+		onSuper = function()
+			superOn = not superOn
+			render()
+		end,
+		onSandbox = function(action)
+			if action == "rerack" or action == "clear" then
+				Remotes.Event("Sandbox"):FireServer({ action = action })
+			elseif action == "camera" then
+				TableViewController.toggleFreeCamera()
+			elseif action == "hideUi" then
+				setUiHidden(true)
+			end
 		end,
 	})
 end

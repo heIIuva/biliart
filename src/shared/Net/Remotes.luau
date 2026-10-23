@@ -73,6 +73,14 @@ export type MatchSnapshot = {
 	turnEndsAt: number, -- workspace:GetServerTimeNow() when the turn times out
 	reasonKey: string?, -- outcome of the previous shot (localization key)
 	winner: number?,
+	chaos: {
+		golden: { number },
+		meter: { number }, -- by player index, 0..1
+		armed: { boolean }, -- Tiger super shot ready
+		fog: boolean, -- the current shooter plays in fog
+		note: string?, -- bonus just handed out (localization key)
+	}?,
+	trick: { id: string, nameKey: string, target: number }?,
 }
 
 -- Server -> client toast: a localization key and values for its {placeholders}.
@@ -118,6 +126,7 @@ local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
 	ShopState = "RemoteEvent", -- server -> client: { passes = { [key]: true }, serverHypeUntil }
 	RequestAd = "RemoteEvent", -- client -> server: placement name (Config.Ads)
 	AdResult = "RemoteEvent", -- server -> client: { placement, shown: boolean }
+	Sandbox = "RemoteEvent", -- client -> server: { action = "place", id, x, y } | { action = "rerack" | "clear" }
 }
 
 local FOLDER_NAME = "Remotes"

@@ -20,6 +20,8 @@ export type Callbacks = {
 	onAgain: () -> (),
 	onLeave: () -> (),
 	onAd: () -> (), -- "watch an ad: x2 reward" on the result panel
+	onSuper: () -> (), -- chaos: toggle the Tiger super shot for the next shot
+	onSandbox: (action: string) -> (), -- "rerack" | "clear" | "hideUi" | "camera"
 }
 
 export type PlayerLine = { name: string, groupKey: string?, active: boolean }
@@ -31,9 +33,12 @@ export type Hud = {
 	showStatus: (left: PlayerLine?, right: PlayerLine?) -> (),
 	setTimer: (share: number) -> (),
 	setHint: (key: string?) -> (),
+	setHintText: (text: string) -> (),
 	toast: (key: string) -> (),
 	showResult: (titleKey: string?, reasonKey: string?) -> (),
 	resultAdButton: TextButton, -- hidden until an ad is available
+	setChaos: (meter: number?, armed: boolean, superOn: boolean) -> (), -- nil meter hides the chaos bar
+	setSandbox: (visible: boolean) -> (),
 }
 
 local function corner(parent: GuiObject, scale: number)
@@ -104,42 +109,56 @@ function MatchHud.new(callbacks: Callbacks): Hud
 	gui.DisplayOrder = 1 -- above the aiming controls
 	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 
-	-- Level picker.
+	-- Mode picker: a scrolling list so it fits a landscape phone.
 	local picker = frame("Picker", gui, {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(340, 420),
+		Size = UDim2.new(0, 340, 0.82, 0),
 		Visible = false,
 		Active = true,
 	})
-	corner(picker, 0.08)
-	label("Title", picker, { Text = Text.get("MATCH_VS_BOT"), Size = UDim2.new(1, 0, 0, 50), TextSize = 22 })
-	for i, level in { "Easy", "Medium", "Hard" } do
-		button(`{level}Button`, picker, `LEVEL_{string.upper(level)}`, {
-			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(0.5, 0, 0, 50 + (i - 1) * 60),
-			Size = UDim2.fromOffset(260, 50),
-			BackgroundColor3 = if i == 3 then RED else DARK,
+	corner(picker, 0.06)
+	label("Title", picker, { Text = Text.get("MATCH_VS_BOT"), Size = UDim2.new(1, 0, 0, 44), TextSize = 22 })
+	local options = Instance.new("ScrollingFrame")
+	options.Name = "Options"
+	options.BackgroundTransparency = 1
+	options.BorderSizePixel = 0
+	options.Position = UDim2.fromOffset(0, 46)
+	options.Size = UDim2.new(1, 0, 1, -52)
+	options.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	options.CanvasSize = UDim2.new()
+	options.ScrollBarThickness = 6
+	options.Parent = picker
+	local optionsLayout = Instance.new("UIListLayout")
+	optionsLayout.Padding = UDim.new(0, 8)
+	optionsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	optionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	optionsLayout.Parent = options
+	local entries: { { name: string, key: string, payload: string?, color: Color3 } } = {
+		{ name = "EasyButton", key = "LEVEL_EASY", payload = "Easy", color = DARK },
+		{ name = "MediumButton", key = "LEVEL_MEDIUM", payload = "Medium", color = DARK },
+		{ name = "HardButton", key = "LEVEL_HARD", payload = "Hard", color = RED },
+		{ name = "CasualButton", key = "MATCH_VS_PLAYER", payload = "Casual", color = Color3.fromRGB(120, 80, 20) },
+		{ name = "RankedButton", key = "MATCH_RANKED", payload = "Ranked", color = Color3.fromRGB(120, 80, 20) },
+		{ name = "ChaosButton", key = "MATCH_CHAOS", payload = "Chaos", color = Color3.fromRGB(110, 20, 110) },
+		{ name = "TrickButton", key = "MATCH_TRICK", payload = "Trick", color = Color3.fromRGB(20, 90, 110) },
+		{ name = "SandboxButton", key = "MATCH_SANDBOX", payload = "Sandbox", color = Color3.fromRGB(20, 90, 110) },
+		{ name = "PickerLeaveButton", key = "HUD_LEAVE", payload = nil, color = Color3.fromRGB(60, 60, 60) },
+	}
+	for i, entry in entries do
+		local b = button(entry.name, options, entry.key, {
+			Size = UDim2.fromOffset(260, 48),
+			BackgroundColor3 = entry.color,
 		}, function()
-			callbacks.onStart(level)
+			local payload = entry.payload
+			if payload then
+				callbacks.onStart(payload)
+			else
+				callbacks.onLeave()
+			end
 		end)
+		b.LayoutOrder = i
 	end
-	for i, mode in { "Casual", "Ranked" } do
-		button(`{mode}Button`, picker, if mode == "Casual" then "MATCH_VS_PLAYER" else "MATCH_RANKED", {
-			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(0.5, 0, 0, 236 + (i - 1) * 60),
-			Size = UDim2.fromOffset(260, 50),
-			BackgroundColor3 = Color3.fromRGB(120, 80, 20),
-		}, function()
-			callbacks.onStart(mode)
-		end)
-	end
-	button("PickerLeaveButton", picker, "HUD_LEAVE", {
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 360),
-		Size = UDim2.fromOffset(260, 48),
-		BackgroundColor3 = Color3.fromRGB(60, 60, 60),
-	}, callbacks.onLeave)
 
 	-- Waiting for a human opponent.
 	local searching = frame("Searching", gui, {
@@ -253,6 +272,50 @@ function MatchHud.new(callbacks: Callbacks): Hud
 		BackgroundColor3 = Color3.fromRGB(60, 60, 60),
 	}, callbacks.onLeave)
 
+	-- Bottom-left mode bar: chaos meter + super shot, or sandbox tools.
+	local modeBar = frame("ModeBar", gui, {
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 16, 1, -16),
+		Size = UDim2.fromOffset(440, 48),
+		BackgroundTransparency = 1,
+	})
+	local barLayout = Instance.new("UIListLayout")
+	barLayout.FillDirection = Enum.FillDirection.Horizontal
+	barLayout.Padding = UDim.new(0, 8)
+	barLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	barLayout.Parent = modeBar
+	local meterBack = frame("Meter", modeBar, { Size = UDim2.fromOffset(150, 48), LayoutOrder = 1, Visible = false })
+	corner(meterBack, 0.2)
+	local meterFill =
+		frame("Fill", meterBack, { BackgroundColor3 = GOLD, BackgroundTransparency = 0, Size = UDim2.fromScale(0, 1) })
+	corner(meterFill, 0.2)
+	label("Label", meterBack, { Text = Text.get("CHAOS_METER"), Size = UDim2.fromScale(1, 1), TextSize = 14 })
+	local superButton = button("SuperButton", modeBar, "CHAOS_SUPER", {
+		Size = UDim2.fromOffset(200, 48),
+		LayoutOrder = 2,
+		Visible = false,
+	}, callbacks.onSuper)
+	local sandboxButtons: { TextButton } = {}
+	for i, entry in
+		{
+			{ "rerack", "SANDBOX_RERACK" },
+			{ "clear", "SANDBOX_CLEAR" },
+			{ "hideUi", "SANDBOX_HIDE_UI" },
+			{ "camera", "SANDBOX_CAMERA" },
+		}
+	do
+		local b = button(`Sandbox_{entry[1]}`, modeBar, entry[2], {
+			Size = UDim2.fromOffset(100, 48),
+			LayoutOrder = 10 + i,
+			TextSize = 14,
+			BackgroundColor3 = Color3.fromRGB(20, 90, 110),
+			Visible = false,
+		}, function()
+			callbacks.onSandbox(entry[1])
+		end)
+		table.insert(sandboxButtons, b)
+	end
+
 	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
 	local toastTween: Tween? = nil
@@ -284,6 +347,9 @@ function MatchHud.new(callbacks: Callbacks): Hud
 		setHint = function(key: string?)
 			hint.Text = if key then Text.get(key) else ""
 		end,
+		setHintText = function(text: string)
+			hint.Text = text
+		end,
 		toast = function(key: string)
 			if toastTween then
 				toastTween:Cancel()
@@ -300,6 +366,17 @@ function MatchHud.new(callbacks: Callbacks): Hud
 			tween:Play()
 		end,
 		resultAdButton = adButton,
+		setChaos = function(meter: number?, armed: boolean, superOn: boolean)
+			meterBack.Visible = meter ~= nil
+			superButton.Visible = meter ~= nil and armed
+			meterFill.Size = UDim2.fromScale(meter or 0, 1)
+			superButton.BackgroundColor3 = if superOn then GOLD else RED
+		end,
+		setSandbox = function(visible: boolean)
+			for _, b in sandboxButtons do
+				b.Visible = visible
+			end
+		end,
 		showResult = function(titleKey: string?, reasonKey: string?)
 			if not result.Visible then
 				adButton.Visible = false

@@ -36,6 +36,7 @@ export type Report = {
 	won: boolean,
 	lostByEight: boolean,
 	eightOnBreak: boolean,
+	glitched: boolean, -- chaos mode: a ball phased into a pocket
 }
 
 export type Input = {
@@ -47,6 +48,8 @@ export type Input = {
 	geometry: TableGeometry.Geometry,
 	visitOwnPots: number, -- own balls potted earlier in this visit
 	turnStreak: number,
+	glitched: boolean?,
+	allOwn: boolean?, -- sandbox: every object ball counts as the shooter's own
 }
 
 local Kind = PoolPhysics.EventKind
@@ -138,7 +141,7 @@ function ShotReport.build(input: Input): Report
 			else
 				potted += 1
 				pottedEight = pottedEight or e.a == 8
-				if ownGroup and PoolRules.groupOf(e.a) == ownGroup then
+				if input.allOwn or (ownGroup and PoolRules.groupOf(e.a) == ownGroup) then
 					pottedOwn += 1
 				end
 				cushionsBeforePot = math.max(cushionsBeforePot, cushionsByBall[e.a] or 0)
@@ -187,6 +190,7 @@ function ShotReport.build(input: Input): Report
 		won = won,
 		lostByEight = outcome.gameOver and outcome.winner ~= shooter and pottedEight,
 		eightOnBreak = won and before.isBreak,
+		glitched = input.glitched == true,
 	}
 end
 

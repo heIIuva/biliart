@@ -51,6 +51,7 @@ export type PlayerData = {
 	boosts: { [string]: number }, -- boost id -> os.time() it ends
 	redeemedCodes: { [string]: boolean },
 	groupRewardClaimed: boolean,
+	trick: { week: number, day: number, attempts: number, limit: number, solved: boolean, totalAttempts: number },
 	settings: { music: number, sfx: number, announcer: number, quality: string },
 	tutorialDone: boolean,
 	firstJoinTime: number,
@@ -92,6 +93,7 @@ function Progression.template(): PlayerData
 		boosts = {},
 		redeemedCodes = {},
 		groupRewardClaimed = false,
+		trick = { week = -1, day = -1, attempts = 0, limit = 10, solved = false, totalAttempts = 0 },
 		settings = { music = 0.6, sfx = 1, announcer = 1, quality = "Auto" },
 		tutorialDone = false,
 		firstJoinTime = 0,

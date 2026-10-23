@@ -408,6 +408,78 @@ function TableViewController.resetCamera()
 	end
 end
 
+-- Chaos: gold outline on the golden balls.
+function TableViewController.setHighlights(view: View, ids: { number })
+	for id, part in view.parts do
+		local existing = part:FindFirstChild("Golden")
+		local wanted = table.find(ids, id) ~= nil
+		if wanted and not existing then
+			local highlight = Instance.new("Highlight")
+			highlight.Name = "Golden"
+			highlight.FillColor = Color3.fromRGB(255, 200, 40)
+			highlight.OutlineColor = Color3.fromRGB(255, 230, 120)
+			highlight.FillTransparency = 0.4
+			highlight.Parent = part
+		elseif not wanted and existing then
+			existing:Destroy()
+		end
+	end
+end
+
+-- Chaos: a fog layer over the table for the player who got fogged.
+local fogPart: Part? = nil
+function TableViewController.setFog(view: View, on: boolean)
+	if on and not fogPart then
+		local fog = Instance.new("Part")
+		fog.Name = "Fog"
+		fog.Anchored = true
+		fog.CanCollide = false
+		fog.CanQuery = false
+		fog.Material = Enum.Material.SmoothPlastic
+		fog.Color = Color3.fromRGB(230, 230, 235)
+		fog.Transparency = 0.25
+		local g = view.geometry
+		fog.Size = Vector3.new(TableSpace.studs(2 * g.halfLength) * 0.6, 0.05, TableSpace.studs(2 * g.halfWidth))
+		fog.CFrame = view.surface * CFrame.new(TableSpace.studs(g.halfLength * 0.35), TableSpace.studs(0.12), 0)
+		fog.Parent = Workspace
+		fogPart = fog
+	elseif not on and fogPart then
+		fogPart:Destroy()
+		fogPart = nil
+	end
+end
+
+-- Sandbox: switch between the fixed top view and a free orbit camera around the table.
+local orbitAnchor: Part? = nil
+function TableViewController.toggleFreeCamera()
+	local view = TableViewController.seatedView()
+	local camera = Workspace.CurrentCamera
+	if not view then
+		return
+	end
+	if orbitAnchor then
+		orbitAnchor:Destroy()
+		orbitAnchor = nil
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = cameraTarget(view)
+		camera.FieldOfView = Controls.CameraFov
+		return
+	end
+	local anchor = Instance.new("Part")
+	anchor.Name = "OrbitAnchor"
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.one
+	anchor.CFrame = view.surface
+	anchor.Parent = Workspace
+	orbitAnchor = anchor
+	camera.FieldOfView = 50
+	camera.CameraSubject = anchor
+	camera.CameraType = Enum.CameraType.Custom
+end
+
 function TableViewController.view(tableId: string): View?
 	return views[tableId]
 end

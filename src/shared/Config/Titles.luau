@@ -179,6 +179,22 @@ local titles: { Title } = {
 		conditions = { isBreak = false, minPottedOwn = 3 },
 	},
 
+	-- Glitch titles: planned "impossible" events, chaos mode only (never ranked).
+	{
+		id = "QUANTUM",
+		kind = "Glitch",
+		priority = 1100,
+		hanzi = "量子",
+		nameKey = "TITLE_QUANTUM",
+		rarityTier = "Legendary",
+		splash = "Glitch",
+		sound = "Glitch",
+		announcer = "AnnGlitch",
+		slowMo = true,
+		cameraShake = 1,
+		conditions = { glitched = true },
+	},
+
 	-- Anti-titles: failures are clips too.
 	{
 		id = "SHAME",
