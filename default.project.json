@@ -12,6 +12,11 @@
 				"$path": "src/server"
 			}
 		},
+		"StarterGui": {
+			"$properties": {
+				"ScreenOrientation": "LandscapeSensor"
+			}
+		},
 		"StarterPlayer": {
 			"StarterPlayerScripts": {
 				"Client": {

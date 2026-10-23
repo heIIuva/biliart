@@ -20,3 +20,16 @@
 - `Pool/Rack.eightBall(geometry, seed)`: seeded sub-millimeter jitter, required for realistic breaks.
 - `Pool/TrajectoryCodec`: buffer encoding (0.1 mm positions, int16 quaternions); a break is ~33–38 KB.
 - Tests: physics (GDD 4.4 + jump, masse, side spin, Chinese8), codec round trip, break benchmark.
+
+## Phase 2 — table in the world, aiming, playback
+- Two free-play tables (Standard green, Chinese8 red) built from primitives, sized from TableGeometry
+  (`server/World/TableBuilder`, `Config/Tables`); ProximityPrompt "Play" seats the player.
+- `TableService` (free play, no rules): validates the shot (`Util/Validate`, Lune-tested), simulates,
+  sends the encoded trajectory to all clients; respots a scratched cue ball, re-racks when the table is empty.
+- `TableViewController`: client-side balls (stripe band / spot so rotation reads), top-down near-orthographic
+  camera with tweened enter/leave, interpolated playback with orientation, sound stubs per event.
+- `AimController` + `UI/TableHud`: touch (point on the table, power bar, fine wheel) and mouse (point, hold LMB
+  and pull back, wheel/arrow keys, RMB cancels); spin and cue-elevation panel; cue stick and aim guide.
+- `Pool/AimPredictor`: first contact, ghost ball, object/cue directions; tested against the simulation on 300 scenes.
+- `World/TableSpace` maps simulation meters to Roblox CFrames; `Util/Text` resolves en/ru localization keys.
+- Landscape orientation is a place setting (`StarterGui.ScreenOrientation` in `default.project.json`).

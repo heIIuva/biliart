@@ -6,6 +6,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local PoolPhysics = require("../Pool/PoolPhysics")
+
 -- Client -> server: cue strike intent. Server re-validates everything.
 export type ShotParams = {
 	angle: number, -- radians
@@ -17,9 +19,28 @@ export type ShotParams = {
 	cueBallPos: { x: number, y: number }?, -- ball in hand only
 }
 
+-- Server -> clients: everything needed to draw a table.
+export type TableSnapshot = {
+	tableId: string,
+	variant: string, -- TableGeometry.Variant
+	surface: CFrame, -- center of the cloth surface, see World/TableSpace
+	balls: { PoolPhysics.BallState },
+}
+
+-- Server -> clients after a shot: play `trajectory` (TrajectoryCodec), then snap to `balls`.
+export type ShotResultPayload = {
+	tableId: string,
+	trajectory: buffer,
+	balls: { PoolPhysics.BallState },
+}
+
 local DEFINITIONS: { [string]: "RemoteEvent" | "RemoteFunction" } = {
-	Shot = "RemoteEvent", -- client -> server: ShotParams
-	ShotResult = "RemoteEvent", -- server -> clients: encoded trajectory + rules result (payload type in phase 2)
+	Shot = "RemoteEvent", -- client -> server: ShotParams (seated player, table idle)
+	ShotResult = "RemoteEvent", -- server -> clients: ShotResultPayload
+	TableState = "RemoteEvent", -- server -> clients: TableSnapshot (on join, after a re-rack)
+	SeatChanged = "RemoteEvent", -- server -> client: tableId or nil
+	LeaveTable = "RemoteEvent", -- client -> server: no payload
+	Rerack = "RemoteEvent", -- client -> server: free play only, no payload
 }
 
 local FOLDER_NAME = "Remotes"
